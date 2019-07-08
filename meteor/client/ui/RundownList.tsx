@@ -267,6 +267,20 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 		const synced = this.props.rundowns.filter(i => !i.unsynced)
 		const unsynced = this.props.rundowns.filter(i => i.unsynced)
 
+		let statusClassNames = [
+			'system-status',
+			this.state.systemStatus ?
+			(
+				this.state.systemStatus.status === 'FAIL' ? 'system-status-fail' :
+				(
+					this.state.systemStatus.status === 'WARNING' ? 'system-status-warning' :
+					'system-status-good'
+				)
+			)
+			:
+			''
+		].join(' ')
+
 		return <React.Fragment>
 			{
 				(
@@ -361,9 +375,18 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 						this.state.systemStatus ?
 							<React.Fragment>
 								<div>
-									{t('status')}: {this.state.systemStatus.status} / {this.state.systemStatus._internal.statusCodeString}
+									<h1>
+										{t('Status')}
+										<div className={statusClassNames}>
+											<div className='value'>
+												<span className='pill device-item__device-status__label'>
+													{this.state.systemStatus.status} / {this.state.systemStatus._internal.statusCodeString}
+												</span>
+											</div>
+										</div>
+									</h1> 
 								</div>
-								<div>
+								<div className="mod mvl">
 									{
 										this.state.systemStatus._internal.messages.length ? 
 										<table className='table expando table-messages'>

@@ -216,7 +216,9 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 	constructor (props) {
 		super(props)
 
-		this.state = {}
+		this.state = {
+			showAllSteps: false
+		}
 	}
 
 	componentDidMount () {

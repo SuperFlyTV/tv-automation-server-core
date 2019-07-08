@@ -391,7 +391,7 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 										this.state.systemStatus._internal.messages.length ? 
 										<table className='table expando table-messages'>
 											<tbody>
-												<tr className=''>
+												<tr className='table-messages-header' onClick={(e) => this.setState({ showAllSteps: !this.state.showAllSteps })}>
 													<th className='table-messages-title'>{t('Status Messages')}</th>
 													<td className='table-messages-expand'>
 														<button className='action-btn' onClick={(e) => this.setState({ showAllSteps: !this.state.showAllSteps })}>

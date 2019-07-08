@@ -11,6 +11,10 @@
 }
 
 .table-messages {
+	.table-messages-header {
+		cursor: pointer;
+	}
+
 	.table-messages-title {
 		width: 94%;
 	}

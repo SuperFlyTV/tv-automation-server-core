@@ -7,3 +7,19 @@
 		}
 	}
 }
+
+.table-messages {
+	width: 99% !important;
+
+	.table-messages-title {
+		width: 90%;
+	}
+	
+	.table-messages-expand {
+		width: 10%;
+	}
+
+	td {
+		padding-left: 1.5em !important;
+	}
+}

@@ -268,7 +268,7 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 		const unsynced = this.props.rundowns.filter(i => i.unsynced)
 
 		let statusClassNames = [
-			'system-status',
+			'system-status-bug',
 			this.state.systemStatus ?
 			(
 				this.state.systemStatus.status === 'FAIL' ? 'system-status-fail' :

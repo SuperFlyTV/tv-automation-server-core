@@ -376,7 +376,7 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 							<React.Fragment>
 								<div>
 									<h1>
-										{t('Status')}
+										{t('System Status')}
 										<div className={statusClassNames}>
 											<div className='value'>
 												<span className='pill device-item__device-status__label'>

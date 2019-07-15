@@ -402,7 +402,7 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 												{
 													this.state.showAllSteps && _.map(this.state.systemStatus._internal.messages, (message, i) => {
 														return (
-															<tr>
+															<tr key={i}>
 																<td key={i} colSpan={2}>
 																	{message}
 																</td>

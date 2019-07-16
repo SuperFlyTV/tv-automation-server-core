@@ -185,7 +185,7 @@ body.vertical-overflow-only {
 	
 		.timing-clock {
 			position: relative;
-			margin-right: 1em;
+			margin-right: 0.4em;
 			font-family: 'Roboto', Helvetica Neue, Arial, sans-serif;
 			font-weight: normal;
 			color: $general-clock;
@@ -194,6 +194,7 @@ body.vertical-overflow-only {
 			font-weight: 100;
 			word-break: keep-all;
 			white-space: nowrap;
+			text-shadow: 1px 1px #333;
 
 			&.visual-last-child {
 				margin-right: 0;
@@ -365,7 +366,7 @@ body.vertical-overflow-only {
 	// background-color: #600
 // }
 .header.rundown.active.rehearsal .first-row  {
-	background-color: #660
+	background: repeating-linear-gradient(-45deg, #cad025, #777b0b 100px, #333 30px, #333 200px)
 }
 
 .segment-timeline-placeholder {

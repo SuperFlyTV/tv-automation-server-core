@@ -194,7 +194,7 @@ body.vertical-overflow-only {
 			font-weight: 100;
 			word-break: keep-all;
 			white-space: nowrap;
-			text-shadow: 1px 1px #333;
+			text-shadow: 1px 1px 1px #333;
 
 			&.visual-last-child {
 				margin-right: 0;
@@ -233,6 +233,7 @@ body.vertical-overflow-only {
 				white-space: nowrap;
 				font-weight: 300;
 				font-size: 0.5em;
+				text-shadow: 1px 1px 1px #333;
 
 				&.left {
 					left: 0;

@@ -17,7 +17,6 @@
 			width: 2em;
     		height: 2.0em;
 			margin-top: -0.5em;
-			filter: drop-shadow(1px 1px 1px #2d2d2d);
 		}
 	}
 }
@@ -25,4 +24,10 @@
 .super-dark {
 	background: #000000;
 	color: #fff;
+}
+
+.header.active {
+	.sofie-logo {
+		filter: drop-shadow(1px 1px 1px #2d2d2d);
+	}
 }

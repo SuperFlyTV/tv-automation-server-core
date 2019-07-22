@@ -194,7 +194,6 @@ body.vertical-overflow-only {
 			font-weight: 100;
 			word-break: keep-all;
 			white-space: nowrap;
-			text-shadow: 1px 1px 1px #333;
 
 			&.visual-last-child {
 				margin-right: 0;
@@ -349,6 +348,14 @@ body.vertical-overflow-only {
 				left: 2em;
 				transform: none;
 			}
+		}
+	}
+}
+
+.header.rundown.active {
+	.timing {
+		.timing-clock {
+			text-shadow: 1px 1px 1px #333;
 		}
 	}
 }

@@ -157,7 +157,7 @@ function updateServerTime (retries: number = 0) {
 				systemTime.diff = result.mean
 				systemTime.stdDev = result.stdDev
 			}
-			let message = `Unable to accuire NTP-time with good enough accuracy (standard deviation: ${Math.floor(result.stdDev * 10) / 10} ms)`
+			let message = `Unable to acquire NTP-time with good enough accuracy (standard deviation: ${Math.floor(result.stdDev * 10) / 10} ms)`
 			if (systemTime.stdDev < 200) {
 				setSystemStatus('systemTime', { statusCode: StatusCode.WARNING_MAJOR, messages: [message] })
 			} else {

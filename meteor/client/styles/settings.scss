@@ -157,4 +157,15 @@
 			color: $color-status-warning;
 		}
 	}
+
+	.warning-msg {
+		&.inline {
+			float: right;
+
+			.svg-inline--fa {
+				float: right;
+				margin-left: 0.4em;
+			}
+		}
+	}
 }

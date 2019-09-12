@@ -26,6 +26,7 @@ import { Studios } from '../../lib/collections/Studios'
 import { ShowStyleBases } from '../../lib/collections/ShowStyleBases'
 import { ShowStyleVariants } from '../../lib/collections/ShowStyleVariants'
 import { PubSub } from '../../lib/api/pubsub'
+import { faEye, faEyeSlash, faAngleRight } from '@fortawesome/fontawesome-free-solid';
 
 const PackageInfo = require('../../package.json')
 
@@ -182,6 +183,7 @@ interface IRundownsListProps {
 
 interface IRundownsListState {
 	systemStatus?: StatusResponse
+	showAllSteps: boolean
 }
 
 export const RundownList = translateWithTracker(() => {
@@ -214,7 +216,9 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 	constructor (props) {
 		super(props)
 
-		this.state = {}
+		this.state = {
+			showAllSteps: false
+		}
 	}
 
 	componentDidMount () {
@@ -262,6 +266,20 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 
 		const synced = this.props.rundowns.filter(i => !i.unsynced)
 		const unsynced = this.props.rundowns.filter(i => i.unsynced)
+
+		let statusClassNames = [
+			'system-status-bug',
+			this.state.systemStatus ?
+			(
+				this.state.systemStatus.status === 'FAIL' ? 'system-status-fail' :
+				(
+					this.state.systemStatus.status === 'WARNING' ? 'system-status-warning' :
+					'system-status-good'
+				)
+			)
+			:
+			''
+		].join(' ')
 
 		return <React.Fragment>
 			{
@@ -357,24 +375,44 @@ class extends MeteorReactComponent<Translated<IRundownsListProps>, IRundownsList
 						this.state.systemStatus ?
 							<React.Fragment>
 								<div>
-									{t('status')}: {this.state.systemStatus.status} / {this.state.systemStatus._internal.statusCodeString}
+									<h1>
+										{t('System Status')}
+										<div className={statusClassNames}>
+											<div className='value'>
+												<span className='pill device-item__device-status__label'>
+													{this.state.systemStatus.status} / {this.state.systemStatus._internal.statusCodeString}
+												</span>
+											</div>
+										</div>
+									</h1> 
 								</div>
-								<div>
+								<div className="mod mvl">
 									{
-										this.state.systemStatus._internal.messages.length ?
-											<div>
-												{t('Status Messages:')}
-												<ul>
-													{_.map(this.state.systemStatus._internal.messages, (message, i) => {
+										this.state.systemStatus._internal.messages.length ? 
+										<table className='table expando table-messages'>
+											<tbody>
+												<tr className='table-messages-header' onClick={(e) => this.setState({ showAllSteps: !this.state.showAllSteps })}>
+													<th className='table-messages-title'>{t('Status Messages')}</th>
+													<td className='table-messages-expand'>
+														<button className='action-btn' onClick={(e) => this.setState({ showAllSteps: !this.state.showAllSteps })}>
+															<FontAwesomeIcon icon={this.state.showAllSteps ? faEyeSlash : faEye} />
+														</button>
+													</td>
+												</tr>
+												{
+													this.state.showAllSteps && _.map(this.state.systemStatus._internal.messages, (message, i) => {
 														return (
-															<li key={i}>
-																{message}
-															</li>
+															<tr key={i}>
+																<td key={i} colSpan={2}>
+																	{message}
+																</td>
+															</tr>
 														)
-													})}
-												</ul>
-											</div> :
-										null
+													})
+												}
+											</tbody>
+										</table>
+										: null
 									}
 								</div>
 							</React.Fragment>

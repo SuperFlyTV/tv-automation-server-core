@@ -1,9 +1,58 @@
+@import "_colorScheme";
+
 .rundown-list-item {
 	.rundown-list-item__actions {
 		min-width: 4em;
 
 		> .action-btn {
 			width: 1.5em;
+		}
+	}
+}
+
+.table-messages {
+	.table-messages-header {
+		cursor: pointer;
+	}
+
+	.table-messages-title {
+		width: 94%;
+	}
+	
+	.table-messages-expand {
+		width: 6%;
+	}
+
+	td {
+		padding-left: 1.5em !important;
+	}
+}
+
+.system-status-bug {
+	display: inline-block;
+	position: relative;
+	top: 50%;
+	transform: translateY(-15%);
+	padding-left: 0.5em;
+
+	&.system-status-fail {
+		.pill {
+			background: $color-status-bad;
+			border: $color-status-bad;
+		}
+	}
+
+	&.system-status-warning {
+		.pill {
+			background: $color-status-warning;
+			border: $color-status-warning;	
+		}
+	}
+
+	&.system-status-good {
+		.pill {
+			background: $color-status-good;
+			border: $color-status-good;
 		}
 	}
 }

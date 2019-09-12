@@ -201,7 +201,7 @@ const EditAttributeText = wrapEditAttribute(class extends EditAttributeBase {
 
 		this.handleChange = this.handleChange.bind(this)
 		this.handleBlur = this.handleBlur.bind(this)
-		this.handleEscape = this.handleEscape.bind(this)
+		this.handleEscapeOrEnter = this.handleEscapeOrEnter.bind(this)
 	}
 	handleChange (event) {
 		this.handleEdit(event.target.value)
@@ -209,10 +209,17 @@ const EditAttributeText = wrapEditAttribute(class extends EditAttributeBase {
 	handleBlur (event) {
 		this.handleUpdate(event.target.value)
 	}
-	handleEscape (event) {
+	handleEscapeOrEnter (event) {
 		let e = event as KeyboardEvent
+
 		if (e.key === 'Escape') {
 			this.handleDiscard()
+		}
+
+		if (e.key === 'Enter') {
+			e.preventDefault()
+			e.stopPropagation()
+			this.handleUpdate(event.target.value)
 		}
 	}
 	render () {
@@ -224,7 +231,7 @@ const EditAttributeText = wrapEditAttribute(class extends EditAttributeBase {
 				value={this.getEditAttribute() || ''}
 				onChange={this.handleChange}
 				onBlur={this.handleBlur}
-				onKeyUp={this.handleEscape}
+				onKeyUp={this.handleEscapeOrEnter}
 			/>
 		)
 	}

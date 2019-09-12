@@ -51,6 +51,9 @@ import {
 	mappingIsSisyfos,
 	mappingIsTCPSend
 } from '../../../lib/api/studios'
+import { callMethod } from '../../lib/clientAPI'
+import { ShowStylesAPI } from '../../../lib/api/showStyles'
+import { SettingsNavigation } from '../../lib/SettingsNavigation'
 
 interface IStudioDevicesProps {
 	studio: Studio
@@ -790,7 +793,6 @@ interface IStudioSettingsProps {
 	}
 }
 interface IStudioSettingsState {
-
 }
 interface IStudioSettingsTrackedProps {
 	studio?: Studio
@@ -822,7 +824,7 @@ class StudioBaselineStatus extends MeteorReactComponent<Translated<IStudioBaseli
 		super(props)
 
 		this.state = {
-			needsUpdate: false
+			needsUpdate: false,
 		}
 	}
 
@@ -943,6 +945,26 @@ export default translateWithTracker<IStudioSettingsProps, IStudioSettingsState, 
 		return options
 	}
 
+	renderShowStyleEditButtons () {
+		const { t } = this.props
+		let buttons: JSX.Element[] = []
+		if (this.props.studio) {
+			this.props.studio.supportedShowStyleBase.map(style => {
+				let base = this.props.availableShowStyleBases.find(base => base.showStyleBase._id === style)
+				if (base) {
+					buttons.push(
+						<SettingsNavigation
+							key={'settings-nevigation-' + base.showStyleBase.name}
+							attribute='name'
+							obj={base.showStyleBase}
+							type='showstyle'></SettingsNavigation>
+					)
+				}
+			})
+		}
+		return ( buttons )
+	}
+
 	renderEditForm () {
 		const { t } = this.props
 
@@ -977,6 +999,10 @@ export default translateWithTracker<IStudioSettingsProps, IStudioSettingsState, 
 								mutateUpdateValue={v => v === '' ? undefined : v}
 								collection={Studios}
 								className='mdinput'></EditAttribute>
+								<SettingsNavigation
+									attribute='blueprintId'
+									obj={this.props.studio}
+									type='blueprint'></SettingsNavigation>
 							<span className='mdfx'></span>
 						</div>
 					</label>
@@ -990,6 +1016,10 @@ export default translateWithTracker<IStudioSettingsProps, IStudioSettingsState, 
 								label={t('Click to show available Show Styles')}
 								type='multiselect'
 								collection={Studios}></EditAttribute>
+								{
+									this.renderShowStyleEditButtons()
+								}
+								<SettingsNavigation type='newshowstyle' />
 						</div>
 					</div>
 					<label className='field'>

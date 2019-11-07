@@ -30,25 +30,25 @@ export class NoraPreviewController extends React.Component<IPropsHeader> {
 }
 
 export class NoraPreviewRenderer extends React.Component<{}, IStateHeader> {
-	static __singletonRef: NoraPreviewRenderer
+	static _singletonRef: NoraPreviewRenderer
 
 	iframeElement: HTMLIFrameElement
 
 	static show (noraContent: NoraContent, style: { [key: string]: any }) {
-		NoraPreviewRenderer.__singletonRef.__show(noraContent, style)
+		NoraPreviewRenderer._singletonRef._show(noraContent, style)
 	}
 
 	static hide () {
-		NoraPreviewRenderer.__singletonRef.__hide()
+		NoraPreviewRenderer._singletonRef._hide()
 	}
 
 	constructor (props) {
 		super(props)
 
-		NoraPreviewRenderer.__singletonRef = this
+		NoraPreviewRenderer._singletonRef = this
 	}
 
-	__show (noraContent: NoraContent, style: { [key: string]: any }) {
+	private _show (noraContent: NoraContent, style: { [key: string]: any }) {
 		if (this.state && JSON.stringify(this.state.noraContent) !== JSON.stringify(noraContent)) {
 			if (this.iframeElement && this.iframeElement.contentWindow) {
 				this.iframeElement.contentWindow.postMessage({
@@ -67,10 +67,10 @@ export class NoraPreviewRenderer extends React.Component<{}, IStateHeader> {
 							_valid: false
 						},
 						'timing': {
-							duration: "00:05",
-							in: "auto",
-							out: "auto",
-							timeIn: "00:00"
+							duration: '00:05',
+							in: 'auto',
+							out: 'auto',
+							timeIn: '00:00'
 						}
 					}
 				}, '*')
@@ -83,14 +83,14 @@ export class NoraPreviewRenderer extends React.Component<{}, IStateHeader> {
 		})
 	}
 
-	__hide () {
+	private _hide () {
 		this.setState({
 			...this.state,
 			show: false
 		})
 	}
 
-	private __setPreview = (e: HTMLIFrameElement) => {
+	private _setPreview = (e: HTMLIFrameElement) => {
 		if (!e) return
 		this.iframeElement = e
 		const noraContent = this.state.noraContent
@@ -115,10 +115,10 @@ export class NoraPreviewRenderer extends React.Component<{}, IStateHeader> {
 							_valid: false
 						},
 						'timing': {
-							duration: "00:05",
-							in: "auto",
-							out: "auto",
-							timeIn: "00:00"
+							duration: '00:05',
+							in: 'auto',
+							out: 'auto',
+							timeIn: '00:00'
 						}
 					}
 				}, '*')
@@ -137,11 +137,11 @@ export class NoraPreviewRenderer extends React.Component<{}, IStateHeader> {
 			<Escape to='document'>
 				<div className='segment-timeline__mini-inspector segment-timeline__mini-inspector--graphics' style={style}>
 					<div className='preview'>
-						<img width="100%" src="../images/previewBG.png" alt=""/>
+						<img width='100%' src='../images/previewBG.png' alt=''/>
 						<iframe
 							sandbox='allow-scripts'
 							src={this.state.noraContent.previewRenderer as string}
-							ref={this.__setPreview}
+							ref={this._setPreview}
 							width='1920'
 							height='1080'
 						></iframe>

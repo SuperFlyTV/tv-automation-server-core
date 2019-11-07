@@ -19,6 +19,7 @@ import { fetchFrom } from '../../lib/lib'
 import { UploadButton } from '../../lib/uploadButton'
 import * as faUpload from '@fortawesome/fontawesome-free-solid/faUpload'
 import * as FontAwesomeIcon from '@fortawesome/react-fontawesome'
+import { faExclamationTriangle } from '@fortawesome/fontawesome-free-solid'
 
 interface IProps {
 	match: {
@@ -77,7 +78,7 @@ export default translateWithTracker<IProps, IState, ITrackedProps>((props: IProp
 				yes: t('Update'),
 				no: t('Cancel'),
 				message: <React.Fragment>
-					<p>{t('Are you sure you want to update the blueprints from the file "{{fileName}}"?', { fileName: file.name })}</p>,
+					<p>{t('Are you sure you want to update the blueprints from the file "{{fileName}}"?', { fileName: file.name })}</p>
 					<p>{t('Please note: This action is irreversible!')}</p>
 				</React.Fragment>,
 				onAccept: () => {
@@ -164,6 +165,13 @@ export default translateWithTracker<IProps, IState, ITrackedProps>((props: IProp
 					</div>
 					<label className='field'>
 						{t('Blueprint Name')}
+						{
+							!blueprint.name ?
+							<div className='error-notice inline'>
+								{t('No name set')} <FontAwesomeIcon icon={faExclamationTriangle} />
+							</div> :
+							null
+						}
 						<div className='mdi'>
 							<EditAttribute
 								modifiedClassName='bghl'
@@ -177,6 +185,13 @@ export default translateWithTracker<IProps, IState, ITrackedProps>((props: IProp
 					</label>
 					<div className='mod mvs mhn'>
 						{t('Blueprint Type')}: <i>{(blueprint.blueprintType || '').toUpperCase()}</i>
+						{
+							!blueprint.blueprintType ?
+							<div className='error-notice inline'>
+								{t('Upload a new blueprint')} <FontAwesomeIcon icon={faExclamationTriangle} />
+							</div> :
+							null
+						}
 					</div>
 					{ this.renderAssignment(blueprint) }
 					<div className='mod mvs mhn'>

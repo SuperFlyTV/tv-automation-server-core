@@ -605,7 +605,11 @@ const StudioMappings = translate()(class StudioMappings extends React.Component<
 									<span>{t('Port: {{port}}, Channel: {{channel}}', { port: mapping.portId, channel: mapping.channelId })}</span>
 							)) ||
 							(
-								<span>{t('Unknown device type: {{device}}', { device: PlayoutDeviceType[mapping.device] }) } </span>
+								mapping.device === PlayoutDeviceType.VMIX && (
+								<span>-</span>
+							)) ||
+							(
+								<span>Unknown device type: {PlayoutDeviceType[mapping.device] } </span>
 							)
 						}
 						</td>

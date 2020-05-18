@@ -156,7 +156,8 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 					inputResults.push({
 						stepId: manualInput.stepId,
 						attribute: manualInput.attribute,
-						value: value
+						value: value,
+						isOptional: manualInput.isOptional
 					})
 				}
 			})
@@ -230,7 +231,7 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 						value = (this.state.inputValues[stepId] || {})[manualInput.attribute]
 					}
 					return (<div key={rank++}>
-						<h3 className='mhn mbsx mtl'>{manualInput.label}</h3>
+						<h3 className='mhn mbsx mtl'>{manualInput.label} {!manualInput.isOptional ? '*' : ''}</h3>
 						<div>{manualInput.description}</div>
 						<div>{
 							manualInput.inputType && manualInput.attribute ?

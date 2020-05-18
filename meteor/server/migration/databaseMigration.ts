@@ -521,6 +521,7 @@ export function runMigration (
 			_.each(inputResults, (ir) => {
 				if (ir.stepId === step.id) {
 					stepInput[ir.attribute] = ir.value
+					stepInput.isOptional = ir.isOptional
 				}
 			})
 
@@ -559,7 +560,7 @@ export function runMigration (
 
 			// let validate = step.validate as ValidateFunctionCore
 			// let validateMessage: string | boolean = validate(true)
-			if (validateMessage) {
+			if (validateMessage && !stepInput.isOptional) {
 				// Something's not right
 				let msg = `Step "${step.id}": Something went wrong, validation didn't approve of the changes. The changes have been applied, but might need to be confirmed.`
 				if (validateMessage !== true && _.isString(validateMessage)) {

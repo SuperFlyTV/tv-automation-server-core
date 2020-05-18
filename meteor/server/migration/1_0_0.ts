@@ -55,7 +55,7 @@ addMigrationSteps('1.0.0', [
 		}
 	},
 	ensureCollectionProperty('Studios', {}, 'settings.slackEvaluationUrls', null, 'text', 'Slack webhook URLs',
-		'Enter the URL to the Slack webhook (example: "https://hooks.slack.com/services/WEBHOOKURL"', undefined, 'studio.settings.slackEvaluationUrls from config'),
+		'Enter the URL to the Slack webhook (example: "https://hooks.slack.com/services/WEBHOOKURL"', undefined, 'studio.settings.slackEvaluationUrls from config', true),
 
 	{ // migrate from config.mediaResolutions to settings.supportedMediaFormats
 		id: 'studio.settings.supportedMediaFormats from config',

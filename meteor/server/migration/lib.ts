@@ -30,7 +30,8 @@ export function ensureCollectionProperty<T = any> (
 	label?: string,
 	description?: string,
 	defaultValue?: any,
-	dependOnResultFrom?: string
+	dependOnResultFrom?: string,
+	isOptional?: boolean
 ): MigrationStepBase {
 	let collection: Mongo.Collection<T> = Collections[collectionName]
 	if (!collection) throw new Meteor.Error(404, `Collection ${collectionName} not found`)
@@ -64,7 +65,8 @@ export function ensureCollectionProperty<T = any> (
 						description: localDescription,
 						inputType: inputType,
 						attribute: obj._id,
-						defaultValue: defaultValue
+						defaultValue: defaultValue,
+						isOptional: isOptional
 					})
 				}
 			})

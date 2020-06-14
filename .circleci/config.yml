@@ -117,6 +117,69 @@ jobs:
                docker tag server-core:$CIRCLE_BRANCH docker.pkg.github.com/$GITHUB_IMAGE:$CIRCLE_BRANCH
                docker push docker.pkg.github.com/$GITHUB_IMAGE:$CIRCLE_BRANCH
              fi
+      - run:
+          name: Persist image name
+          command: |
+            IMAGE_NAME=$(docker inspect --format='{{index .RepoDigests 0}}' server-core:$CIRCLE_BRANCH)
+            echo $IMAGE_NAME > ./built-image
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+
+  deploy-production:
+    docker:
+      - image: circleci/buildpack-deps:buster
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Download kubectl
+          command: |
+            curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.18.0/bin/linux/amd64/kubectl
+            chmod +x ./kubectl
+
+            mkdir -p $HOME/.kube
+            echo -n $KUBECONFIG_DATA | base64 --decode > $HOME/.kube/config
+      - run:
+          name: Deploy
+          command: |
+            IMAGE_NAME=$(cat ./built-image)
+            if [ -z "$IMAGE_NAME" ]
+            then
+              # report fail
+              echo "No image specified"
+              exit 1
+            else
+              ./kubectl set image deployment/sofie-production sofie=$IMAGE_NAME --record
+            fi
+
+  deploy-staging:
+    docker:
+      - image: circleci/buildpack-deps:buster
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Download kubectl
+          command: |
+            curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.18.0/bin/linux/amd64/kubectl
+            chmod +x ./kubectl
+            
+            mkdir -p $HOME/.kube
+            echo -n $KUBECONFIG_DATA | base64 --decode > $HOME/.kube/config
+      - run:
+          name: Deploy
+          command: |
+            IMAGE_NAME=$(cat ./built-image)
+            if [ -z "$IMAGE_NAME" ]
+            then
+              # report fail
+              echo "No image specified"
+              exit 1
+            else
+              ./kubectl set image deployment/sofie-staging sofie=$IMAGE_NAME --record
+            fi
 
 workflows:
   version: 2
@@ -160,3 +223,22 @@ workflows:
                 - develop
                 - stage
                 - /release\d+/
+                - /superfly-.*/
+      - deploy-staging:
+          requires:
+            - publish-branch
+          filters:
+            tags:
+              ignore: /.*/
+            branches:
+              only: 
+                - superfly-dev
+      - deploy-production:
+          requires:
+            - publish-branch
+          filters:
+            tags:
+              ignore: /.*/
+            branches:
+              only: 
+                - superfly-master

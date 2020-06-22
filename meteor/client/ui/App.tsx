@@ -173,6 +173,9 @@ export const App = translateWithTracker(() => {
 				const invalid = Object.keys(roles).findIndex((k) => roles[k] !== this.state[k])
 				if (invalid !== -1) this.setState({ ...roles })
 			}
+			if (this.props.user && this.state.requestedRoute) {
+				this.setState({ requestedRoute: '' })
+			}
 		}
 
 		render() {
@@ -231,7 +234,7 @@ export const App = translateWithTracker(() => {
 								<this.protectedRoute path="/status" component={Status} />
 								<this.protectedRoute
 									path="/settings"
-									component={() => <SettingsComponent userAccounts={Settings.enableUserAccounts} />}
+									component={(props) => <SettingsComponent userAccounts={Settings.enableUserAccounts} {...props} />}
 								/>
 								<Route path="/testTools" component={TestTools} />
 							</Switch>

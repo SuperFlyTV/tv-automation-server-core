@@ -31,6 +31,8 @@ export interface ISettings {
 	enableUserAccounts: boolean
 	/** Allow Segments to become unsynced, rather than the entire rundown */
 	allowUnsyncedSegments: boolean
+
+	SNAPSHOT_ID: string
 }
 
 export let Settings: ISettings
@@ -48,6 +50,8 @@ const DEFAULT_SETTINGS: ISettings = {
 	allowGrabbingTimeline: true,
 	enableUserAccounts: true,
 	allowUnsyncedSegments: false,
+
+	SNAPSHOT_ID: '',
 }
 
 Settings = _.clone(DEFAULT_SETTINGS)

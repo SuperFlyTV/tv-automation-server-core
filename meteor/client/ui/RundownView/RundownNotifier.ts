@@ -35,6 +35,7 @@ import { RundownPlaylist, RundownPlaylists, RundownPlaylistId } from '../../../l
 import { MeteorCall } from '../../../lib/api/methods'
 import { getSegmentPartNotes } from '../../../lib/rundownNotifications'
 import { RankedNote, IMediaObjectIssue } from '../../../lib/api/rundownNotifications'
+import { Settings } from '../../../lib/Settings'
 
 export const onRONotificationClick = new ReactiveVar<((e: RONotificationEvent) => void) | undefined>(undefined)
 export const reloadRundownPlaylistClick = new ReactiveVar<((e: any) => void) | undefined>(undefined)
@@ -102,7 +103,7 @@ class RundownViewNotifier extends WithManagedTracker {
 
 				this.autorun(() => {
 					// console.log('RundownViewNotifier 1-1')
-					if (showStyleBase && studio) {
+					if (showStyleBase && studio && !Settings.enableUserAccounts) {
 						this.reactiveMediaStatus(playlistId, showStyleBase, studio)
 						this.reactivePartNotes(playlistId)
 						this.reactivePeripheralDeviceStatus(studio._id)
@@ -675,7 +676,7 @@ class RundownViewNotifier extends WithManagedTracker {
 
 	private updateVersionAndConfigStatus(playlistId: RundownPlaylistId) {
 		const t = i18nTranslator
-
+		if (Settings.enableUserAccounts) return
 		// Doing the check server side, to avoid needing to subscribe to the blueprint and showStyleVariant
 		MeteorCall.rundown
 			.rundownPlaylistNeedsResync(playlistId)

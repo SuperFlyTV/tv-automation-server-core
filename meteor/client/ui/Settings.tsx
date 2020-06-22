@@ -5,7 +5,7 @@ import { translate } from 'react-i18next'
 import { unprotectString } from '../../lib/lib'
 import { doModalDialog } from '../lib/ModalDialog'
 import { PeripheralDeviceAPI } from '../../lib/api/peripheralDevice'
-import { Route, NavLink, Switch, Redirect } from 'react-router-dom'
+import { Route, NavLink, Switch, Redirect, RouteComponentProps } from 'react-router-dom'
 
 import { Studio, Studios } from '../../lib/collections/Studios'
 import { PeripheralDevice, PeripheralDevices } from '../../lib/collections/PeripheralDevices'
@@ -31,6 +31,7 @@ import { faExclamationTriangle } from '@fortawesome/fontawesome-free-solid'
 import { MeteorCall } from '../../lib/api/methods'
 import { getUser, User } from '../../lib/collections/Users'
 import { Settings as MeteorSettings } from '../../lib/Settings'
+import { getAllowConfigure } from '../lib/localStorage'
 
 class WelcomeToSettings extends React.Component {
 	render() {
@@ -442,9 +443,8 @@ const SettingsMenu = translateWithTracker<ISettingsMenuProps, ISettingsMenuState
 		}
 	}
 )
-interface ISettingsProps {
+interface ISettingsProps extends RouteComponentProps {
 	userAccounts: boolean
-	match?: any
 }
 class Settings extends MeteorReactComponent<Translated<ISettingsProps>> {
 	private user: User | null
@@ -460,6 +460,12 @@ class Settings extends MeteorReactComponent<Translated<ISettingsProps>> {
 		this.subscribe(PubSub.showStyleBases, {})
 		this.subscribe(PubSub.showStyleVariants, {})
 		this.subscribe(PubSub.blueprints, {})
+	}
+	componentDidMount() {
+		if (MeteorSettings.enableUserAccounts && this.user && this.user.roles) {
+			const access = getAllowConfigure()
+			if (!access) this.props.history.push('/')
+		}
 	}
 	render() {
 		const { t } = this.props

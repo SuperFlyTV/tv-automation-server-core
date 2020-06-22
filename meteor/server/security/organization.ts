@@ -71,7 +71,9 @@ export namespace OrganizationContentWriteAccess {
 			if (!existingBlueprint && !allowMissing)
 				throw new Meteor.Error(404, `Blueprint "${blueprintId}" not found!`)
 		}
-		return { ...anyContent(cred0, existingBlueprint), blueprint: existingBlueprint }
+		/** Temporary secuirty bypasss for blueprint read only */
+		return { userId: null, organizationId: null, cred: cred0 }
+		// return { ...anyContent(cred0, existingBlueprint), blueprint: existingBlueprint }
 	}
 	export function snapshot(cred0: Credentials, existingSnapshot?: SnapshotItem | SnapshotId) {
 		triggerWriteAccess()

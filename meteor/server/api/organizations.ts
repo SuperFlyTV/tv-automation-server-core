@@ -1,7 +1,9 @@
 import { Meteor } from 'meteor/meteor'
+import * as Path from 'path'
+import { fsReadFile } from '../lib'
 import { check, Match } from '../../lib/check'
 import * as _ from 'underscore'
-import { literal, getRandomId, makePromise, getCurrentTime } from '../../lib/lib'
+import { literal, getRandomId, makePromise, getCurrentTime, protectString } from '../../lib/lib'
 import { MethodContextAPI, MethodContext } from '../../lib/api/methods'
 import { NewOrganizationAPI, OrganizationAPIMethods } from '../../lib/api/organization'
 import { registerClassToMeteorMethods } from '../methods'
@@ -10,6 +12,67 @@ import { OrganizationContentWriteAccess } from '../security/organization'
 import { triggerWriteAccessBecauseNoCheckNecessary } from '../security/lib/securityVerify'
 import { insertStudio } from './studios'
 import { insertShowStyleBase } from './showStyles'
+import { Studios, StudioId } from '../../lib/collections/Studios'
+import { ShowStyleBases, ShowStyleBaseId } from '../../lib/collections/ShowStyleBases'
+import { Blueprints } from '../../lib/collections/Blueprints'
+import { CoreSystem } from '../../lib/collections/CoreSystem'
+import { runMigration, prepareMigration } from '../migration/databaseMigration'
+import { UserId } from '../../lib/collections/Users'
+import { restoreFromRundownPlaylistSnapshot } from './snapshot'
+import { Snapshots } from '../../lib/collections/Snapshots'
+import { Settings } from '../../lib/Settings'
+
+function restoreSnapshotTEMP(orgId: OrganizationId, studioId: StudioId, showStyleId: ShowStyleBaseId) {
+	if (!Settings.SNAPSHOT_ID) throw new Meteor.Error(500, 'Missing snapshot id')
+	const snapshotId = protectString(Settings.SNAPSHOT_ID)
+	let snapshot = Snapshots.findOne(snapshotId)
+	if (!snapshot) throw new Meteor.Error(500, `Could not find snapshot with id ${Settings.SNAPSHOT_ID}`)
+
+	let filePath = Path.join('G:/Clients/SuperFlyTV/tv-storage', snapshot.fileName)
+
+	let dataStr = fsReadFile(filePath).toString()
+
+	let readSnapshot = JSON.parse(dataStr)
+	readSnapshot.snapshot.organizationId = orgId
+	readSnapshot.playlist.organizationId = orgId
+	readSnapshot.rundowns.forEach((rundown) => {
+		rundown.organizationId = orgId
+	})
+	restoreFromRundownPlaylistSnapshot(readSnapshot, studioId, showStyleId)
+}
+
+function createDefault(userId: UserId, orgId: OrganizationId) {
+	let systemBlueprintId, studioBlueprintId, showStyleBlueprintId
+	const studioId = insertStudio({ userId })
+	const showStyleId = insertShowStyleBase({ userId })
+	const core = CoreSystem.findOne()
+	Blueprints.find()
+		.fetch()
+		.forEach((blueprint) => {
+			if (blueprint.blueprintType === 'system') systemBlueprintId = blueprint._id
+			if (blueprint.blueprintType === 'studio') studioBlueprintId = blueprint._id
+			if (blueprint.blueprintType === 'showstyle') showStyleBlueprintId = blueprint._id
+		})
+	if (systemBlueprintId && core) CoreSystem.update({ _id: core._id }, { $set: { blueprintId: systemBlueprintId } })
+	if (studioBlueprintId)
+		Studios.update(
+			{ _id: studioId },
+			{
+				$set: {
+					blueprintId: studioBlueprintId,
+				},
+				$push: {
+					supportedShowStyleBase: showStyleId,
+				},
+			}
+		)
+	if (showStyleId) ShowStyleBases.update({ _id: showStyleId }, { $set: { blueprintId: showStyleBlueprintId } })
+	let migration = prepareMigration(true)
+	if (migration.migrationNeeded && migration.manualStepCount === 0) {
+		runMigration(migration.chunks, migration.hash, [])
+	}
+	restoreSnapshotTEMP(orgId, studioId, showStyleId)
+}
 
 export function insertOrganization(context: MethodContext, organization: NewOrganization) {
 	triggerWriteAccessBecauseNoCheckNecessary()
@@ -25,13 +88,10 @@ export function insertOrganization(context: MethodContext, organization: NewOrga
 			broadcastMediums: organization.broadcastMediums,
 			created: getCurrentTime(),
 			modified: getCurrentTime(),
-		}),
-		() => {
-			insertStudio({ userId })
-			insertShowStyleBase({ userId })
-		}
+		})
 	)
 	Meteor.users.update(userId, { $set: { organizationId: id } })
+	createDefault(userId, id)
 	return id
 }
 

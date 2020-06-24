@@ -19,8 +19,7 @@ export function createUser(email: string, password: string, profile: UserProfile
 		profile: profile,
 	})
 	if (!id) throw new Meteor.Error(500, 'Error creating user account')
-	/** @todo - Enable once user emails have been setup */
-	// Accounts.sendVerificationEmail(id, email)
+	Accounts.sendVerificationEmail(id, email)
 }
 
 export function removeUser(context: MethodContext) {

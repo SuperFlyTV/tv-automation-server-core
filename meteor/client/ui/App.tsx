@@ -101,7 +101,8 @@ export const App = translateWithTracker(() => {
 			}
 
 			if (Settings.enableUserAccounts && !this.props.user) {
-				if (window.location.pathname !== '/') {
+				const path = window.location.pathname
+				if (path !== '/' && path.indexOf('verify-email') === -1) {
 					requestedRoute = window.location.pathname
 				}
 			}
@@ -218,9 +219,15 @@ export const App = translateWithTracker(() => {
 											component={(props) => <LoginPage {...props} requestedRoute={this.state.requestedRoute} />}
 										/>,
 										<Route key="1" exact path="/login" component={() => <Redirect to="/" />} />,
-										<Route key="2" exact path="/signup" component={SignupPage} />,
-										<Route key="3" exact path="/reset" component={RequestResetPage} />,
-										<Route key="4" exact path="/reset/:token" component={ResetPage} />,
+										<Route
+											key="2"
+											exact
+											path="/login/verify-email/:token"
+											component={(props) => <LoginPage {...props} requestedRoute={this.state.requestedRoute} />}
+										/>,
+										<Route key="3" exact path="/signup" component={SignupPage} />,
+										<Route key="4" exact path="/reset" component={RequestResetPage} />,
+										<Route key="5" exact path="/reset/:token" component={ResetPage} />,
 										<this.protectedRoute key="5" exact path="/account" component={AccountPage} />,
 									]
 								) : (

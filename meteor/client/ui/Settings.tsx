@@ -457,8 +457,6 @@ class Settings extends MeteorReactComponent<Translated<ISettingsProps>> {
 		this.subscribe(PubSub.showStyleBases, {})
 		this.subscribe(PubSub.showStyleVariants, {})
 		this.subscribe(PubSub.blueprints, {})
-	}
-	componentDidMount() {
 		if (MeteorSettings.enableUserAccounts && this.user && this.user.roles) {
 			const access = getAllowConfigure()
 			if (!access) this.props.history.push('/')

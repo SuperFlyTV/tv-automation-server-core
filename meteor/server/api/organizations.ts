@@ -87,7 +87,11 @@ export function insertOrganization(context: MethodContext, organization: NewOrga
 			broadcastMediums: organization.broadcastMediums,
 			created: getCurrentTime(),
 			modified: getCurrentTime(),
-		})
+		}),
+		() => {
+			insertStudio(context)
+			insertShowStyleBase(context)
+		}
 	)
 	Meteor.users.update(userId, { $set: { organizationId: id } })
 	createDefault(userId, id)

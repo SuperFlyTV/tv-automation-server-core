@@ -81,6 +81,7 @@ describe('Expected Media Items', () => {
 				studioId: env.studio._id,
 				playlistId: rplId,
 				_rank: 0,
+				organizationId: protectString(''),
 			})
 		)
 		Segments.insert(
@@ -108,7 +109,6 @@ describe('Expected Media Items', () => {
 				rundownId: rdId,
 				segmentId: protectString(''),
 				title: '',
-				typeVariant: '',
 			})
 		)
 		Pieces.insert(
@@ -151,7 +151,6 @@ describe('Expected Media Items', () => {
 				rundownId: rdId,
 				segmentId: protectString(''),
 				title: '',
-				typeVariant: '',
 			})
 		)
 		Pieces.insert(

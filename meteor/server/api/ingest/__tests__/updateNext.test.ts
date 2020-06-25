@@ -8,7 +8,7 @@ import { literal, saveIntoDb, protectString } from '../../../../lib/lib'
 
 import { UpdateNext } from '../updateNext'
 
-import { ServerPlayoutAPI, setNextPartInner } from '../../playout/playout'
+import { ServerPlayoutAPI } from '../../playout/playout'
 import { RundownPlaylists, RundownPlaylist, RundownPlaylistId } from '../../../../lib/collections/RundownPlaylists'
 import { PartInstances, DBPartInstance } from '../../../../lib/collections/PartInstances'
 import { removeRundownFromCache } from '../../playout/lib'
@@ -52,6 +52,7 @@ function createMockRO() {
 		importVersions: {} as any,
 		playlistId: rundownPlaylistId,
 		_rank: 0,
+		organizationId: protectString(''),
 	})
 
 	saveIntoDb(
@@ -109,7 +110,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment1'),
 				externalId: 'p1',
 				title: 'Part 1',
-				typeVariant: '',
 			}),
 		}),
 		literal<DBPartInstance>({
@@ -124,7 +124,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment1'),
 				externalId: 'p2',
 				title: 'Part 2',
-				typeVariant: '',
 			}),
 		}),
 		literal<DBPartInstance>({
@@ -139,7 +138,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment1'),
 				externalId: 'p3',
 				title: 'Part 3',
-				typeVariant: '',
 			}),
 		}),
 		// Segment 2
@@ -155,7 +153,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment2'),
 				externalId: 'p4',
 				title: 'Part 4',
-				typeVariant: '',
 			}),
 		}),
 		literal<DBPartInstance>({
@@ -170,7 +167,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment2'),
 				externalId: 'p5',
 				title: 'Part 5',
-				typeVariant: '',
 			}),
 		}),
 		// Segment 3
@@ -186,7 +182,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment3'),
 				externalId: 'p6',
 				title: 'Part 6',
-				typeVariant: '',
 			}),
 		}),
 		// Segment 4
@@ -202,7 +197,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment4'),
 				externalId: 'p7',
 				title: 'Part 7',
-				typeVariant: '',
 			}),
 		}),
 		literal<DBPartInstance>({
@@ -217,7 +211,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment4'),
 				externalId: 'p8',
 				title: 'Part 8',
-				typeVariant: '',
 				floated: true,
 			}),
 		}),
@@ -233,7 +226,6 @@ function createMockRO() {
 				segmentId: protectString('mock_segment4'),
 				externalId: 'p9',
 				title: 'Part 9',
-				typeVariant: '',
 			}),
 		}),
 	]
@@ -296,7 +288,7 @@ describe('Test mos update next part helpers', () => {
 
 		ensureNextPartIsValid()
 
-		expect(setNextPartInner).not.toHaveBeenCalled()
+		expect(ServerPlayoutAPI.setNextPartInner).not.toHaveBeenCalled()
 	})
 	testInFiber('ensureNextPartIsValid: Missing next part', () => {
 		resetPartIds('mock_part_instance3', 'fake_part')
@@ -324,7 +316,7 @@ describe('Test mos update next part helpers', () => {
 
 		ensureNextPartIsValid()
 
-		expect(setNextPartInner).toHaveBeenCalledTimes(0)
+		expect(ServerPlayoutAPI.setNextPartInner).toHaveBeenCalledTimes(0)
 	})
 	testInFiber('ensureNextPartIsValid: Missing current and next parts', () => {
 		resetPartIds('fake_part', 'not_real_either')
@@ -343,14 +335,14 @@ describe('Test mos update next part helpers', () => {
 
 		ensureNextPartIsValid()
 
-		expect(setNextPartInner).not.toHaveBeenCalled()
+		expect(ServerPlayoutAPI.setNextPartInner).not.toHaveBeenCalled()
 	})
 	testInFiber('ensureNextPartIsValid: Ensure manual part doesnt change', () => {
 		resetPartIds('mock_part_instance3', 'mock_part_instance5', true)
 
 		ensureNextPartIsValid()
 
-		expect(setNextPartInner).not.toHaveBeenCalled()
+		expect(ServerPlayoutAPI.setNextPartInner).not.toHaveBeenCalled()
 	})
 	testInFiber('ensureNextPartIsValid: Ensure non-manual part does change', () => {
 		resetPartIds('mock_part_instance3', 'mock_part_instance5', false)
@@ -433,7 +425,7 @@ describe('Test mos update next part helpers', () => {
 		)
 		expect(ensureMock).toHaveBeenCalledTimes(1)
 
-		expect(setNextPartInner).not.toHaveBeenCalled()
+		expect(ServerPlayoutAPI.setNextPartInner).not.toHaveBeenCalled()
 	})
 
 	testInFiber('afterInsertParts: Next part no longer exists', () => {
@@ -464,7 +456,7 @@ describe('Test mos update next part helpers', () => {
 			UpdateNext.afterInsertParts(cache, playlist, ['p99'], true)
 		)
 		expect(ensureMock).toHaveBeenCalledTimes(1)
-		expect(setNextPartInner).not.toHaveBeenCalled()
+		expect(ServerPlayoutAPI.setNextPartInner).not.toHaveBeenCalled()
 	})
 
 	testInFiber('afterInsertParts: Next part was not affected', () => {
@@ -477,7 +469,7 @@ describe('Test mos update next part helpers', () => {
 			UpdateNext.afterInsertParts(cache, playlist, ['p3', 'p4'], true)
 		)
 		expect(ensureMock).not.toHaveBeenCalled()
-		expect(setNextPartInner).not.toHaveBeenCalled()
+		expect(ServerPlayoutAPI.setNextPartInner).not.toHaveBeenCalled()
 	})
 
 	testInFiber('afterInsertParts: Next part was not affected2', () => {
@@ -490,6 +482,6 @@ describe('Test mos update next part helpers', () => {
 			UpdateNext.afterInsertParts(cache, playlist, ['p4', 'p5'], true)
 		)
 		expect(ensureMock).not.toHaveBeenCalled()
-		expect(setNextPartInner).not.toHaveBeenCalled()
+		expect(ServerPlayoutAPI.setNextPartInner).not.toHaveBeenCalled()
 	})
 })

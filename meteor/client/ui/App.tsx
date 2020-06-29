@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { translate, InjectedI18nProps } from 'react-i18next'
+import { WithTranslation } from 'react-i18next'
 import * as m from 'moment'
 import 'moment/min/locales'
 import { parse as queryStringParse } from 'query-string'
@@ -50,7 +50,7 @@ const LAST_RESTART_LATENCY = 3 * 60 * 60 * 1000
 const WINDOW_START_HOUR = 3
 const WINDOW_END_HOUR = 5
 
-interface IAppProps extends InjectedI18nProps, RouteComponentProps {
+interface IAppProps extends WithTranslation, RouteComponentProps {
 	user: User | null
 }
 interface IAppState {

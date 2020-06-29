@@ -4,11 +4,13 @@ import { logger } from './logging'
 import { extractFunctionSignature } from './lib'
 import { MethodContext, MethodContextAPI } from '../lib/api/methods'
 
+type MeteorMethod = (this: MethodContext, ...args: any[]) => any
+
 interface Methods {
-	[method: string]: Function
+	[method: string]: MeteorMethod
 }
 export interface MethodsInner {
-	[method: string]: { wrapped: Function; original: Function }
+	[method: string]: { wrapped: MeteorMethod; original: MeteorMethod }
 }
 /** All (non-secret) methods */
 export const MeteorMethodSignatures: { [key: string]: string[] } = {}
@@ -105,6 +107,7 @@ function setMeteorMethods(orgMethods: MethodsInner, secret?: boolean): void {
 			AllMeteorMethods.push(methodName)
 		}
 	})
+	// @ts-ignore: incompatible due to userId
 	Meteor.methods(methods)
 }
 export function getRunningMethods() {

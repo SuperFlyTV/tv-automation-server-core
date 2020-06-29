@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { Meteor } from 'meteor/meteor'
 import { Random } from 'meteor/random'
-import { check } from 'meteor/check'
 import * as _ from 'underscore'
 import {
 	RundownLayoutExternalFrame,
@@ -24,13 +23,14 @@ import {
 import { MODULE_BROWSER_ORIGIN } from './Inspector/ItemRenderers/NoraItemEditor'
 import { IMOSItem } from 'mos-connection'
 import { doUserAction, UserAction } from '../../lib/userAction'
-import { translate } from 'react-i18next'
+import { withTranslation } from 'react-i18next'
 import { Translated } from '../../lib/ReactMeteorData/ReactMeteorData'
 import { Buckets, Bucket, BucketId } from '../../../lib/collections/Buckets'
 import { IngestAdlib } from 'tv-automation-sofie-blueprints-integration'
 import { MeteorCall } from '../../../lib/api/methods'
 import { ShowStyleVariantId } from '../../../lib/collections/ShowStyleVariants'
 import { Rundowns, Rundown } from '../../../lib/collections/Rundowns'
+import { check } from '../../../lib/check'
 
 const PackageInfo = require('../../../package.json')
 
@@ -92,7 +92,7 @@ interface CurrentNextPartChangedSofieExternalMessage extends SofieExternalMessag
 	}
 }
 
-export const ExternalFramePanel = translate()(
+export const ExternalFramePanel = withTranslation()(
 	class ExternalFramePanel extends React.Component<Translated<IProps>> {
 		frame: HTMLIFrameElement
 		mounted: boolean = false
@@ -432,12 +432,22 @@ export const ExternalFramePanel = translate()(
 						}
 					})
 				}
-
-				const event = new CustomEvent<{}>(MOSEvents.dragleave, {
-					cancelable: false,
-				})
-				window.dispatchEvent(event)
 			}
+			// else if (
+			// 	e.dataTransfer.items.length === 0 &&
+			// 	e.dataTransfer.types.length === 0 &&
+			// 	e.dataTransfer.files.length === 0
+			// ) {
+			// 	// there are no items, no data types and no files, this is probably a cross-frame drag-and-drop
+			// 	// let's try and ask the plugin for some content maybe?
+			// 	console.log('Requesting an object because of a dubious drop event')
+			// 	this.sendMOSMessage(createMosItemRequest())
+			// }
+
+			const event = new CustomEvent<{}>(MOSEvents.dragleave, {
+				cancelable: false,
+			})
+			window.dispatchEvent(event)
 		}
 
 		registerHandlers = () => {

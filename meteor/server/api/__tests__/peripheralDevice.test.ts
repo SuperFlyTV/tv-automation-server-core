@@ -61,6 +61,7 @@ describe('test peripheralDevice general API methods', () => {
 				blueprint: 'on',
 				core: 'plate',
 			},
+			organizationId: protectString(''),
 		})
 		let segmentID: SegmentId = protectString('segment0')
 		let segmentExternalID = 'segment0'
@@ -79,7 +80,6 @@ describe('test peripheralDevice general API methods', () => {
 			segmentId: segmentID,
 			rundownId: rundownID,
 			title: 'Part 000',
-			typeVariant: 'mos',
 		})
 		Parts.insert({
 			_id: protectString('part001'),
@@ -88,7 +88,6 @@ describe('test peripheralDevice general API methods', () => {
 			segmentId: segmentID,
 			rundownId: rundownID,
 			title: 'Part 001',
-			typeVariant: 'mos',
 		})
 		Segments.insert({
 			_id: protectString('segment1'),

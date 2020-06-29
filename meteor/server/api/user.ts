@@ -1,7 +1,7 @@
 import { Meteor } from 'meteor/meteor'
 import * as _ from 'underscore'
 import { Accounts } from 'meteor/accounts-base'
-import { literal, getRandomId, makePromise, getCurrentTime } from '../../lib/lib'
+import { literal, getRandomId, makePromise, getCurrentTime, unprotectString } from '../../lib/lib'
 import { MethodContextAPI, MethodContext } from '../../lib/api/methods'
 import { NewUserAPI, UserAPIMethods } from '../../lib/api/user'
 import { registerClassToMeteorMethods } from '../methods'
@@ -9,7 +9,7 @@ import { SystemReadAccess } from '../security/system'
 import { triggerWriteAccess, triggerWriteAccessBecauseNoCheckNecessary } from '../security/lib/securityVerify'
 import { resolveCredentials } from '../security/lib/credentials'
 import { logNotAllowed } from '../../server/security/lib/lib'
-import { UserProfile } from '../../lib/collections/Users'
+import { UserProfile, User } from '../../lib/collections/Users'
 
 export function createUser(email: string, password: string, profile: UserProfile) {
 	triggerWriteAccessBecauseNoCheckNecessary()
@@ -19,7 +19,15 @@ export function createUser(email: string, password: string, profile: UserProfile
 		profile: profile,
 	})
 	if (!id) throw new Meteor.Error(500, 'Error creating user account')
-	Accounts.sendVerificationEmail(id, email)
+	if (Meteor.settings.MAIL_URL) Accounts.sendVerificationEmail(id, email)
+}
+
+export function requestResetPassword(email: string): boolean {
+	triggerWriteAccessBecauseNoCheckNecessary()
+	const user = Accounts.findUserByEmail(email) as User
+	if (!user) return false
+	Accounts.sendResetPasswordEmail(unprotectString(user._id))
+	return true
 }
 
 export function removeUser(context: MethodContext) {
@@ -34,6 +42,9 @@ export function removeUser(context: MethodContext) {
 class ServerUserAPI extends MethodContextAPI implements NewUserAPI {
 	createUser(email: string, password: string, profile: UserProfile) {
 		return makePromise(() => createUser(email, password, profile))
+	}
+	requestPasswordReset(email: string) {
+		return makePromise(() => requestResetPassword(email))
 	}
 	removeUser() {
 		return makePromise(() => removeUser(this))

@@ -22,7 +22,6 @@ import { restoreFromRundownPlaylistSnapshot } from './snapshot'
 import { Snapshots } from '../../lib/collections/Snapshots'
 
 function restoreSnapshotTEMP(orgId: OrganizationId, studioId: StudioId, showStyleId: ShowStyleBaseId) {
-	if (!Meteor.settings.SNAPSHOT_ID) throw new Meteor.Error(500, 'Missing snapshot id')
 	const snapshotId = protectString(Meteor.settings.SNAPSHOT_ID)
 	let snapshot = Snapshots.findOne(snapshotId)
 	if (!snapshot) throw new Meteor.Error(500, `Could not find snapshot with id ${snapshotId}`)
@@ -70,7 +69,9 @@ function createDefault(userId: UserId, orgId: OrganizationId) {
 	if (migration.migrationNeeded && migration.manualStepCount === 0) {
 		runMigration(migration.chunks, migration.hash, [])
 	}
-	restoreSnapshotTEMP(orgId, studioId, showStyleId)
+	if (Meteor.settings.SNAPSHOT_ID) {
+		restoreSnapshotTEMP(orgId, studioId, showStyleId)
+	}
 }
 
 export function insertOrganization(context: MethodContext, organization: NewOrganization) {

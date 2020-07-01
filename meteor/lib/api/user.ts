@@ -1,7 +1,7 @@
-import { UserProfile } from '../../lib/collections/Users'
+import { UserProfile, UserId } from '../../lib/collections/Users'
 
 export interface NewUserAPI {
-	createUser(email: string, password: string, profile: UserProfile): Promise<void>
+	createUser(email: string, password: string, profile: UserProfile, enroll?: boolean): Promise<UserId>
 	requestPasswordReset(email: string): Promise<boolean>
 	removeUser(): Promise<boolean>
 }

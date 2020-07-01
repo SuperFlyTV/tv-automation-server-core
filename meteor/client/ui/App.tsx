@@ -21,7 +21,7 @@ import {
 	getUIZoom,
 } from '../lib/localStorage'
 import Status from './Status'
-import SettingsComponent from './Settings'
+import { Settings as SettingsComponent } from './Settings'
 import TestTools from './TestTools'
 import { RundownList } from './RundownList'
 import { RundownView } from './RundownView'
@@ -38,6 +38,7 @@ import { SignupPage } from './SignupPage'
 import { RequestResetPage } from './RequestResetPage'
 import { ResetPage } from './ResetPage'
 import { AccountPage } from './AccountPage'
+import { OrganizationPage } from './Organization'
 import { getUser, User } from '../../lib/collections/Users'
 import { PubSub, meteorSubscribe } from '../../lib/api/pubsub'
 import { translateWithTracker, Translated } from '../lib/ReactMeteorData/ReactMeteorData'
@@ -229,6 +230,12 @@ export const App = translateWithTracker(() => {
 										<Route key="4" exact path="/reset" component={RequestResetPage} />,
 										<Route key="5" exact path="/reset/:token" component={ResetPage} />,
 										<this.protectedRoute key="5" exact path="/account" component={AccountPage} />,
+										<this.protectedRoute
+											key="6"
+											exact
+											path="/organization"
+											component={(props) => <OrganizationPage {...props} />}
+										/>,
 									]
 								) : (
 									<Route exact path="/" component={RundownList} />

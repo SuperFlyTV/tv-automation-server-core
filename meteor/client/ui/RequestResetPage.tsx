@@ -4,7 +4,7 @@ import { Translated, translateWithTracker } from '../lib/ReactMeteorData/react-m
 import { RouteComponentProps } from 'react-router'
 import { NotificationCenter, Notification, NoticeLevel } from '../lib/notifications/notifications'
 import { MeteorReactComponent } from '../lib/MeteorReactComponent'
-import { getUser, User } from '../../lib/collections/Users'
+import { getUser } from '../../lib/collections/Users'
 import { MeteorCall } from '../../lib/api/methods'
 
 interface IRequestResetPageProps extends RouteComponentProps {}

@@ -24,7 +24,7 @@ import { Snapshots } from '../../lib/collections/Snapshots'
 function restoreSnapshotTEMP(orgId: OrganizationId, studioId: StudioId, showStyleId: ShowStyleBaseId) {
 	const snapshotId = protectString(Meteor.settings.SNAPSHOT_ID)
 	let snapshot = Snapshots.findOne(snapshotId)
-	if (!snapshot) throw new Meteor.Error(500, `Could not find snapshot with id ${snapshotId}`)
+	if (!snapshot) return
 
 	let filePath = Path.join(Meteor.settings.SNAPSHOT_PATH, snapshot.fileName)
 
@@ -64,7 +64,8 @@ function createDefault(userId: UserId, orgId: OrganizationId) {
 				},
 			}
 		)
-	if (showStyleId) ShowStyleBases.update({ _id: showStyleId }, { $set: { blueprintId: showStyleBlueprintId } })
+	if (showStyleId && showStyleBlueprintId)
+		ShowStyleBases.update({ _id: showStyleId }, { $set: { blueprintId: showStyleBlueprintId } })
 	let migration = prepareMigration(true)
 	if (migration.migrationNeeded && migration.manualStepCount === 0) {
 		runMigration(migration.chunks, migration.hash, [])
@@ -74,10 +75,10 @@ function createDefault(userId: UserId, orgId: OrganizationId) {
 	}
 }
 
-export function insertOrganization(context: MethodContext, organization: NewOrganization) {
+export function insertOrganization(userId: UserId, organization: NewOrganization) {
 	triggerWriteAccessBecauseNoCheckNecessary()
-	const userId = context.userId
-	if (!userId) throw new Meteor.Error(401, 'User is not logged in')
+	// const userId = context.userId
+	//if (!userId) throw new Meteor.Error(401, 'User is not logged in')
 	const admin = { userId }
 	const id = Organizations.insert(
 		literal<DBOrganization>({
@@ -90,8 +91,8 @@ export function insertOrganization(context: MethodContext, organization: NewOrga
 			modified: getCurrentTime(),
 		}),
 		() => {
-			insertStudio(context)
-			insertShowStyleBase(context)
+			insertStudio({ userId })
+			insertShowStyleBase({ userId })
 		}
 	)
 	Meteor.users.update(userId, { $set: { organizationId: id } })
@@ -106,8 +107,8 @@ export function removeOrganization(context: MethodContext) {
 }
 
 class ServerOrganizationAPI extends MethodContextAPI implements NewOrganizationAPI {
-	insertOrganization(organization: NewOrganization) {
-		return makePromise(() => insertOrganization(this, organization))
+	insertOrganization(userId: UserId, organization: NewOrganization) {
+		return makePromise(() => insertOrganization(userId, organization))
 	}
 	removeOrganization() {
 		return makePromise(() => removeOrganization(this))

@@ -160,21 +160,25 @@ export const AccountPage = translateWithTracker(() => {
 								<button className="btn btn-primary">
 									<Link to="/organization">Edit Organization</Link>
 								</button>
-								<button className="btn" onClick={() => this.toggleAccess(UserRoleType.STUDIO_PLAYOUT)}>
-									{roles && roles.find((r) => r.type === UserRoleType.STUDIO_PLAYOUT)
-										? t('Remove Studio Access')
-										: t('Add Studio Access')}
-								</button>
-								<button className="btn" onClick={() => this.toggleAccess(UserRoleType.CONFIGURATOR)}>
-									{roles && roles.find((r) => r.type === UserRoleType.CONFIGURATOR)
-										? t('Remove Configurator Access')
-										: t('Add Configurator Access')}
-								</button>
-								<button className="btn" onClick={() => this.toggleAccess(UserRoleType.DEVELOPER)}>
-									{roles && roles.find((r) => r.type === UserRoleType.DEVELOPER)
-										? t('Remove Developer Access')
-										: t('Add Developer Access')}
-								</button>
+								{this.props.user && this.props.user.roles ? (
+									<React.Fragment>
+										<button className="btn" onClick={() => this.toggleAccess(UserRoleType.STUDIO_PLAYOUT)}>
+											{roles && roles.find((r) => r.type === UserRoleType.STUDIO_PLAYOUT)
+												? t('Remove Studio Access')
+												: t('Add Studio Access')}
+										</button>
+										<button className="btn" onClick={() => this.toggleAccess(UserRoleType.CONFIGURATOR)}>
+											{roles && roles.find((r) => r.type === UserRoleType.CONFIGURATOR)
+												? t('Remove Configurator Access')
+												: t('Add Configurator Access')}
+										</button>
+										<button className="btn" onClick={() => this.toggleAccess(UserRoleType.DEVELOPER)}>
+											{roles && roles.find((r) => r.type === UserRoleType.DEVELOPER)
+												? t('Remove Developer Access')
+												: t('Add Developer Access')}
+										</button>
+									</React.Fragment>
+								) : null}
 							</React.Fragment>
 						) : (
 							<Spinner />

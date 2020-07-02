@@ -56,7 +56,11 @@ const DEFAULT_SETTINGS: ISettings = {
 	defaultDisplayDuration: 3000,
 }
 
-Settings = _.clone(DEFAULT_SETTINGS)
+const SUPERFLY_DEFAULT: Partial<ISettings> = {
+	enableUserAccounts: true,
+}
+
+Settings = { ..._.clone(DEFAULT_SETTINGS), ..._.clone(SUPERFLY_DEFAULT) }
 
 Meteor.startup(() => {
 	Settings = _.extend(Settings, Meteor.settings.public)

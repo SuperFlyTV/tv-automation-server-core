@@ -33,12 +33,12 @@ import { ErrorBoundary } from '../lib/ErrorBoundary'
 import { PrompterView } from './Prompter/PrompterView'
 import { ModalDialogGlobalContainer } from '../lib/ModalDialog'
 import { Settings } from '../../lib/Settings'
-import { LoginPage } from './LoginPage'
-import { SignupPage } from './SignupPage'
-import { RequestResetPage } from './RequestResetPage'
-import { ResetPage } from './ResetPage'
-import { AccountPage } from './AccountPage'
-import { OrganizationPage } from './Organization'
+import { LoginPage } from './Account/NotLoggedIn/LoginPage'
+import { SignupPage } from './Account/NotLoggedIn/SignupPage'
+import { LostPasswordPage } from './Account/NotLoggedIn/LostPassword'
+import { ResetPasswordPage } from './Account/NotLoggedIn/ResetPasswordPage'
+import { AccountPage } from './Account/AccountPage'
+import { OrganizationPage } from './Account/OrganizationPage'
 import { getUser, User } from '../../lib/collections/Users'
 import { PubSub, meteorSubscribe } from '../../lib/api/pubsub'
 import { translateWithTracker, Translated } from '../lib/ReactMeteorData/ReactMeteorData'
@@ -60,6 +60,7 @@ interface IAppState {
 	allowTesting: boolean
 	allowDeveloper: boolean
 	allowService: boolean
+
 	subscriptionsReady: boolean
 	requestedRoute?: string
 }
@@ -79,19 +80,14 @@ export const App = translateWithTracker(() => {
 			const params = queryStringParse(location.search)
 			let requestedRoute: string = ''
 
-			if (params['studio']) setAllowStudio(params['studio'] === '1')
-			if (params['configure']) setAllowConfigure(params['configure'] === '1')
-			if (params['develop']) setAllowDeveloper(params['develop'] === '1')
-			if (params['testing']) setAllowTesting(params['testing'] === '1')
-			if (params['speak']) setAllowSpeaking(params['speak'] === '1')
-			if (params['service']) setAllowService(params['service'] === '1')
-			if (params['help']) setHelpMode(params['help'] === '1')
-			if (params['zoom'] && typeof params['zoom'] === 'string') {
-				setUIZoom(parseFloat((params['zoom'] as string) || '1') / 100 || 1)
-			}
+			if (!Settings.enableUserAccounts) {
+				if (params['studio']) setAllowStudio(params['studio'] === '1')
+				if (params['configure']) setAllowConfigure(params['configure'] === '1')
+				if (params['develop']) setAllowDeveloper(params['develop'] === '1')
+				if (params['testing']) setAllowTesting(params['testing'] === '1')
+				if (params['service']) setAllowService(params['service'] === '1')
 
-			if (params['admin']) {
-				if (!Settings.enableUserAccounts) {
+				if (params['admin']) {
 					const val = params['admin'] === '1'
 					setAllowStudio(val)
 					setAllowConfigure(val)
@@ -100,10 +96,15 @@ export const App = translateWithTracker(() => {
 					setAllowService(val)
 				}
 			}
+			if (params['speak']) setAllowSpeaking(params['speak'] === '1')
+			if (params['help']) setHelpMode(params['help'] === '1')
+			if (params['zoom'] && typeof params['zoom'] === 'string') {
+				setUIZoom(parseFloat((params['zoom'] as string) || '1') / 100 || 1)
+			}
 
-			if (Settings.enableUserAccounts && !this.props.user) {
-				const path = window.location.pathname
-				if (path !== '/' && path.indexOf('verify-email') === -1) {
+			if (!this.props.user) {
+				const path = window.location.pathname + ''
+				if (path.match(/verify-email/)) {
 					requestedRoute = window.location.pathname
 				}
 			}
@@ -125,6 +126,7 @@ export const App = translateWithTracker(() => {
 			if (!Settings.enableUserAccounts) {
 				return <Route {...args} render={(props) => <Component {...props} />} />
 			} else {
+				// If not logged in, redirect to "/":
 				return (
 					<Route {...args} render={(props) => (this.props.user ? <Component {...props} /> : <Redirect to="/" />)} />
 				)
@@ -227,8 +229,8 @@ export const App = translateWithTracker(() => {
 											component={(props) => <LoginPage {...props} requestedRoute={this.state.requestedRoute} />}
 										/>,
 										<Route key="3" exact path="/signup" component={SignupPage} />,
-										<Route key="4" exact path="/reset" component={RequestResetPage} />,
-										<Route key="5" exact path="/reset/:token" component={ResetPage} />,
+										<Route key="4" exact path="/reset" component={LostPasswordPage} />,
+										<Route key="5" exact path="/reset/:token" component={ResetPasswordPage} />,
 										<this.protectedRoute key="5" exact path="/account" component={AccountPage} />,
 										<this.protectedRoute
 											key="6"
@@ -246,10 +248,7 @@ export const App = translateWithTracker(() => {
 								<this.protectedRoute path="/prompter/:studioId" component={PrompterView} />
 								<this.protectedRoute path="/countdowns/:studioId/presenter" component={ClockView} />
 								<this.protectedRoute path="/status" component={Status} />
-								<this.protectedRoute
-									path="/settings"
-									component={(props) => <SettingsComponent userAccounts={Settings.enableUserAccounts} {...props} />}
-								/>
+								<this.protectedRoute path="/settings" component={(props) => <SettingsComponent {...props} />} />
 								<Route path="/testTools" component={TestTools} />
 							</Switch>
 						</ErrorBoundary>

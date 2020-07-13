@@ -35,6 +35,8 @@ export interface ISettings {
 	allowRundownResetOnAir: boolean
 	/** Default duration to use to render parts when no duration is provided */
 	defaultDisplayDuration: number
+	/** If true, displays the evaluation form after at the end of a show */
+	enableAfterBroadcastForm: boolean
 }
 
 export let Settings: ISettings
@@ -54,10 +56,12 @@ const DEFAULT_SETTINGS: ISettings = {
 	allowUnsyncedSegments: false,
 	allowRundownResetOnAir: false,
 	defaultDisplayDuration: 3000,
+	enableAfterBroadcastForm: true,
 }
 
 const SUPERFLY_DEFAULT: Partial<ISettings> = {
 	enableUserAccounts: true,
+	enableAfterBroadcastForm: false,
 }
 
 Settings = { ..._.clone(DEFAULT_SETTINGS), ..._.clone(SUPERFLY_DEFAULT) }

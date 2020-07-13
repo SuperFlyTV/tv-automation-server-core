@@ -48,3 +48,5 @@ import './email'
 // Setup publications and security:
 import './publications/_publications'
 import './security/_security'
+
+import './SuperFly/main'

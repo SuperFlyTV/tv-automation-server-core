@@ -4,6 +4,7 @@ import {
 	allowAccessToStudio,
 	allowAccessToShowStyleBase,
 	allowAccessToRundown,
+	allowAccessToOrganization,
 } from './lib/security'
 import { logNotAllowed, allowOnlyFields, rejectFields } from './lib/lib'
 import { Users } from '../../lib/collections/Users'
@@ -39,6 +40,8 @@ import { ExpectedPlayoutItems } from '../../lib/collections/ExpectedPlayoutItems
 import { Timeline } from '../../lib/collections/Timeline'
 import { rundownContentAllowWrite } from './rundown'
 import { SystemReadAccess, SystemWriteAccess } from './system'
+import { Buckets } from '../../lib/collections/Buckets'
+import { studioContentAllowWrite } from './studio'
 
 // Set up direct collection write access
 
@@ -84,7 +87,9 @@ Organizations.allow({
 		return false
 	},
 	update(userId, doc, fields, modifier) {
-		return false
+		const access = allowAccessToOrganization({ userId: userId }, doc._id)
+		if (!access.update) return logNotAllowed('Organization', access.reason)
+		return allowOnlyFields(doc, fields, ['userRoles'])
 	},
 	remove(userId, doc) {
 		return false
@@ -208,6 +213,17 @@ Timeline.allow({
 	},
 	update(userId, doc, fields, modifier) {
 		return false
+	},
+	remove(userId, doc) {
+		return false
+	},
+})
+Buckets.allow({
+	insert(userId, doc): boolean {
+		return false
+	},
+	update(userId, doc, fields, modifier) {
+		return studioContentAllowWrite(userId, doc) && rejectFields(doc, fields, ['_id'])
 	},
 	remove(userId, doc) {
 		return false

@@ -61,6 +61,7 @@ const DEFAULT_SETTINGS: ISettings = {
 
 const SUPERFLY_DEFAULT: Partial<ISettings> = {
 	enableUserAccounts: true,
+	enableAfterBroadcastForm: false,
 }
 
 Settings = { ..._.clone(DEFAULT_SETTINGS), ..._.clone(SUPERFLY_DEFAULT) }

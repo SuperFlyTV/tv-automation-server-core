@@ -9,6 +9,7 @@ import { EvaluationBase } from '../../lib/collections/Evaluations'
 import { doUserAction, UserAction } from '../lib/userAction'
 import { MeteorCall } from '../../lib/api/methods'
 import { SnapshotId } from '../../lib/collections/Snapshots'
+import { Settings } from '../../lib/Settings'
 
 interface IProps {
 	playlist: RundownPlaylist
@@ -28,6 +29,12 @@ export const AfterBroadcastForm = withTranslation()(
 				q1: '',
 				q2: '',
 			}
+		}
+		deactivate = (e: React.MouseEvent<HTMLElement>) => {
+			const { t } = this.props
+			doUserAction(t, e, UserAction.DEACTIVATE_RUNDOWN_PLAYLIST, (e) =>
+				MeteorCall.userAction.deactivate(e, this.props.playlist._id)
+			)
 		}
 		saveForm = (e: React.MouseEvent<HTMLElement>) => {
 			const { t } = this.props
@@ -86,7 +93,7 @@ export const AfterBroadcastForm = withTranslation()(
 
 			let obj = this.state
 			// console.log('obj', obj)
-			return (
+			return Settings.enableAfterBroadcastForm ? (
 				<div className="afterbroadcastform-container">
 					<div className="afterbroadcastform">
 						<h2>{t('Evaluation')}</h2>
@@ -130,6 +137,12 @@ export const AfterBroadcastForm = withTranslation()(
 							</button>
 						</div>
 					</div>
+				</div>
+			) : (
+				<div className="afterbroadcastform-container">
+					<button className="btn btn-primary" onClick={this.deactivate}>
+						{t('Deactivate Rundown')}
+					</button>
 				</div>
 			)
 		}

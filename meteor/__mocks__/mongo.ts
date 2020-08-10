@@ -10,7 +10,13 @@ import {
 	mongoFindOptions,
 } from '../lib/lib'
 import { RandomMock } from './random'
-import { UpsertOptions, UpdateOptions, FindOptions, ObserveChangesCallbacks } from '../lib/typings/meteor'
+import {
+	UpsertOptions,
+	UpdateOptions,
+	FindOptions,
+	ObserveChangesCallbacks,
+	ObserveCallbacks,
+} from '../lib/typings/meteor'
 import { MeteorMock } from './meteor'
 import { Random } from 'meteor/random'
 import { Meteor } from 'meteor/meteor'
@@ -20,7 +26,8 @@ export namespace MongoMock {
 	interface ObserverEntry<T extends CollectionObject> {
 		id: string
 		query: any
-		callbacks: ObserveChangesCallbacks<T>
+		callbacksChanges?: ObserveChangesCallbacks<T>
+		callbacksObserve?: ObserveCallbacks<T>
 	}
 
 	export interface MockCollections<T extends CollectionObject> {
@@ -81,10 +88,20 @@ export namespace MongoMock {
 				count: () => {
 					return docs.length
 				},
-				observe(clbs) {
+				observe(clbs: ObserveCallbacks<T>) {
+					const id = Random.id(5)
+					observers.push(
+						literal<ObserverEntry<T>>({
+							id: id,
+							callbacksObserve: clbs,
+							query: query,
+						})
+					)
 					return {
 						stop() {
-							// stub
+							const index = observers.findIndex((o) => o.id === id)
+							if (index === -1) throw new Meteor.Error(500, 'Cannot stop observer that is not registered')
+							observers.splice(index, 1)
 						},
 					}
 				},
@@ -94,7 +111,7 @@ export namespace MongoMock {
 					observers.push(
 						literal<ObserverEntry<T>>({
 							id: id,
-							callbacks: clbs,
+							callbacksChanges: clbs,
 							query: query,
 						})
 					)
@@ -139,8 +156,11 @@ export namespace MongoMock {
 
 					_.each(_.clone(this.observers), (obs) => {
 						if (mongoWhere(doc, obs.query)) {
-							if (obs.callbacks.changed) {
-								obs.callbacks.changed(doc._id, {}) // TODO - figure out what changed
+							if (obs.callbacksChanges?.changed) {
+								obs.callbacksChanges.changed(doc._id, {}) // TODO - figure out what changed
+							}
+							if (obs.callbacksObserve?.changed) {
+								obs.callbacksObserve.changed(modifiedDoc, doc)
 							}
 						}
 					})
@@ -167,11 +187,14 @@ export namespace MongoMock {
 				_.each(_.clone(this.observers), (obs) => {
 					if (mongoWhere(d, obs.query)) {
 						const fields = _.keys(_.omit(d, '_id'))
-						if (obs.callbacks.addedBefore) {
-							obs.callbacks.addedBefore(d._id, fields, null as any)
+						if (obs.callbacksChanges?.addedBefore) {
+							obs.callbacksChanges.addedBefore(d._id, fields, null as any)
 						}
-						if (obs.callbacks.added) {
-							obs.callbacks.added(d._id, fields)
+						if (obs.callbacksChanges?.added) {
+							obs.callbacksChanges.added(d._id, fields)
+						}
+						if (obs.callbacksObserve?.added) {
+							obs.callbacksObserve.added(d)
 						}
 					}
 				})
@@ -204,6 +227,17 @@ export namespace MongoMock {
 
 				_.each(docs, (doc) => {
 					delete this.documents[unprotectString(doc._id)]
+
+					_.each(_.clone(this.observers), (obs) => {
+						if (mongoWhere(doc, obs.query)) {
+							if (obs.callbacksChanges?.removed) {
+								obs.callbacksChanges.removed(doc._id)
+							}
+							if (obs.callbacksObserve?.removed) {
+								obs.callbacksObserve.removed(doc)
+							}
+						}
+					})
 				})
 				if (cb) cb(undefined, docs.length)
 				else return docs.length

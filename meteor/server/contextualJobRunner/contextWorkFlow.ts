@@ -1,6 +1,6 @@
 import { Mongo } from 'meteor/mongo'
 import { Meteor } from 'meteor/meteor'
-import { getCurrentTime, waitTime, waitForPromiseAll } from '../lib/lib'
+import { getCurrentTime, waitTime, waitForPromiseAll } from '../../lib/lib'
 import { Context } from '@popperjs/core'
 import * as crypto from 'crypto'
 import { Random } from 'meteor/random'
@@ -933,7 +933,7 @@ export class WorkFlowRunner {
 // ----------------------------------------------------
 // ----------------------------------------------------
 // ----------------------------------------------------
-
+/*
 console.log('-----------------------------------------------------------')
 console.log('-----------------------------------------------------------')
 console.log('-----------------------------------------------------------')
@@ -1030,3 +1030,4 @@ Meteor.startup(() => {
 		.then(() => console.log('Function B end!'))
 		.catch(console.error)
 })
+*/

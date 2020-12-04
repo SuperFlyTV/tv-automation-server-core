@@ -10,7 +10,13 @@ import {
 	mongoFindOptions,
 } from '../lib/lib'
 import { RandomMock } from './random'
-import { UpsertOptions, UpdateOptions, FindOptions, ObserveChangesCallbacks } from '../lib/typings/meteor'
+import {
+	UpsertOptions,
+	UpdateOptions,
+	FindOptions,
+	ObserveChangesCallbacks,
+	ObserveCallbacks,
+} from '../lib/typings/meteor'
 import { MeteorMock } from './meteor'
 import { Random } from 'meteor/random'
 import { Meteor } from 'meteor/meteor'
@@ -26,10 +32,12 @@ import {
 const clone = require('fast-clone')
 
 export namespace MongoMock {
-	interface ObserverEntry<T extends CollectionObject> {
+	interface ObserveEntry<T extends CollectionObject> {
 		id: string
 		query: any
-		callbacks: ObserveChangesCallbacks<T>
+		documents: { [id: string]: T }
+		callbacks: ObserveCallbacks<T>
+		changeCallbacks: ObserveChangesCallbacks<T>
 	}
 
 	export interface MockCollections<T extends CollectionObject> {
@@ -48,9 +56,10 @@ export namespace MongoMock {
 		public _name: string
 		private _options: any = {}
 		private _isMock: true = true // used in test to check that it's a mock
-		private observers: ObserverEntry<T>[] = []
+		private observers: ObserveEntry<T>[] = []
 
 		private _transform?: (o: T) => T
+		private updateObserversTimeout: any | undefined
 
 		constructor(name: string, options?: any) {
 			this._options = options || {}
@@ -66,16 +75,17 @@ export namespace MongoMock {
 				throw new Error(`find being performed using unimplemented options: ${unimplementedUsedOptions}`)
 			}
 
-			const docsArray = _.values(this.documents)
-			let docs = _.compact(
-				query._id && _.isString(query._id)
-					? [this.documents[query._id]]
-					: _.filter(docsArray, (doc) => mongoWhere(doc, query))
-			)
+			let docsArray = _.values(this.documents)
+			if (query._id && _.isString(query._id)) {
+				// Optimization
+				docsArray = [this.documents[query._id]]
+			}
+			let docs = _.compact(_.filter(docsArray, (doc) => mongoWhere(doc, query)))
 
 			docs = mongoFindOptions(docs, options)
 
 			const observers = this.observers
+			const updateObservers = () => this.updateObservers()
 
 			return {
 				_fetchRaw: () => {
@@ -85,15 +95,29 @@ export namespace MongoMock {
 					const transform = this._transform ? this._transform : (doc) => doc
 					return _.map(docs, (doc) => {
 						return transform(clone(doc))
-					})
+					}) as CollectionObject[]
 				},
 				count: () => {
 					return docs.length
 				},
-				observe(clbs) {
+				observe(clbs: ObserveCallbacks<T>) {
+					// todo - finish implementing uses of callbacks
+					const id = Random.id(5)
+					observers.push(
+						literal<ObserveEntry<T>>({
+							id: id,
+							changeCallbacks: {},
+							callbacks: clbs,
+							query: query,
+							documents: {},
+						})
+					)
+					updateObservers()
 					return {
 						stop() {
-							// stub
+							const index = observers.findIndex((o) => o.id === id)
+							if (index === -1) throw new Meteor.Error(500, 'Cannot stop observer that is not registered')
+							observers.splice(index, 1)
 						},
 					}
 				},
@@ -101,12 +125,15 @@ export namespace MongoMock {
 					// todo - finish implementing uses of callbacks
 					const id = Random.id(5)
 					observers.push(
-						literal<ObserverEntry<T>>({
+						literal<ObserveEntry<T>>({
 							id: id,
-							callbacks: clbs,
+							changeCallbacks: clbs,
+							callbacks: {},
 							query: query,
+							documents: {},
 						})
 					)
+					updateObservers()
 					return {
 						stop() {
 							const index = observers.findIndex((o) => o.id === id)
@@ -145,15 +172,7 @@ export namespace MongoMock {
 					const modifiedDoc = mongoModify(query, doc, modifier)
 					this.documents[unprotectString(doc._id)] = modifiedDoc
 
-					Meteor.defer(() => {
-						_.each(_.clone(this.observers), (obs) => {
-							if (mongoWhere(doc, obs.query)) {
-								if (obs.callbacks.changed) {
-									obs.callbacks.changed(doc._id, {}) // TODO - figure out what changed
-								}
-							}
-						})
-					})
+					this.updateObservers()
 				})
 
 				if (cb) cb(undefined, docs.length)
@@ -174,19 +193,7 @@ export namespace MongoMock {
 
 				this.documents[unprotectString(d._id)] = d
 
-				Meteor.defer(() => {
-					_.each(_.clone(this.observers), (obs) => {
-						if (mongoWhere(d, obs.query)) {
-							const fields = _.keys(_.omit(d, '_id'))
-							if (obs.callbacks.addedBefore) {
-								obs.callbacks.addedBefore(d._id, fields, null as any)
-							}
-							if (obs.callbacks.added) {
-								obs.callbacks.added(d._id, fields)
-							}
-						}
-					})
-				})
+				this.updateObservers()
 
 				if (cb) cb(undefined, d._id)
 				else return d._id
@@ -214,15 +221,7 @@ export namespace MongoMock {
 				_.each(docs, (doc) => {
 					delete this.documents[unprotectString(doc._id)]
 
-					Meteor.defer(() => {
-						_.each(_.clone(this.observers), (obs) => {
-							if (mongoWhere(doc, obs.query)) {
-								if (obs.callbacks.removed) {
-									obs.callbacks.removed(doc._id)
-								}
-							}
-						})
-					})
+					this.updateObservers()
 				})
 				if (cb) cb(undefined, docs.length)
 				else return docs.length
@@ -286,6 +285,54 @@ export namespace MongoMock {
 		private get documents(): MockCollection<T> {
 			if (!mockCollections[this._name]) mockCollections[this._name] = {}
 			return mockCollections[this._name]
+		}
+		private updateObservers() {
+			if (this.updateObserversTimeout) {
+				clearTimeout(this.updateObserversTimeout)
+			}
+			this.updateObserversTimeout = setTimeout(() => {
+				// console.log(Date.now() % 1000, 'updateObservers', this._name, this.observers.length)
+				this.observers.forEach((observer: ObserveEntry<CollectionObject>) => {
+					// console.log('observer')
+					const newDocuments = this.find(observer.query).fetch()
+
+					const newIds: { [id: string]: true } = {}
+					for (const newDoc of newDocuments) {
+						// if (onlyUpdatedId && newDoc._id !== onlyUpdatedId) continue
+						const id = unprotectString(newDoc._id)
+
+						newIds[id] = true
+
+						const oldDoc = observer.documents[id]
+						if (!oldDoc) {
+							// Inserted
+							observer.callbacks.added?.(newDoc)
+							observer.changeCallbacks.added?.(newDoc._id, newDoc) // TODO: Figure out what's changed
+
+							observer.documents[id] = clone(newDoc)
+						} else {
+							if (!_.isEqual(newDoc, oldDoc)) {
+								// Changed
+								observer.callbacks.changed?.(newDoc, oldDoc)
+								observer.changeCallbacks.changed?.(newDoc._id, {}) // TODO: Figure out what's changed
+
+								observer.documents[id] = clone(newDoc)
+							}
+						}
+					}
+					for (const id of Object.keys(observer.documents)) {
+						const oldDoc = observer.documents[id]
+
+						if (!newIds[id]) {
+							// Removed
+							observer.callbacks.removed?.(oldDoc)
+							observer.changeCallbacks.removed?.(oldDoc._id)
+
+							delete observer.documents[id]
+						}
+					}
+				})
+			}, 1)
 		}
 	}
 	// Mock functions:

@@ -26,7 +26,7 @@ import { doUserAction, UserAction } from '../../lib/userAction'
 import { withTranslation } from 'react-i18next'
 import { Translated } from '../../lib/ReactMeteorData/ReactMeteorData'
 import { Buckets, Bucket, BucketId } from '../../../lib/collections/Buckets'
-import { IngestAdlib } from 'tv-automation-sofie-blueprints-integration'
+import { IngestAdlib } from '@sofie-automation/blueprints-integration'
 import { MeteorCall } from '../../../lib/api/methods'
 import { ShowStyleVariantId } from '../../../lib/collections/ShowStyleVariants'
 import { Rundowns, Rundown } from '../../../lib/collections/Rundowns'
@@ -132,7 +132,7 @@ export const ExternalFramePanel = withTranslation()(
 		}
 
 		onReceiveMessage = (e: MessageEvent) => {
-			if (e.origin === 'null' && this.frame && e.source === this.frame.contentWindow) {
+			if ((e.origin === 'null' || e.origin === self.origin) && this.frame && e.source === this.frame.contentWindow) {
 				const data = e.data || e['message']
 				if (!data) return
 				if (data.type) {
@@ -248,7 +248,7 @@ export const ExternalFramePanel = withTranslation()(
 			check(message.id, String)
 			check(message.type, String)
 
-			if (_.values(SofieExternalMessageType).indexOf(message.type) < 0) {
+			if (Object.values(SofieExternalMessageType).indexOf(message.type) < 0) {
 				console.error(`ExternalFramePanel: Unknown message type: ${message.type}`)
 				return
 			}
@@ -352,12 +352,7 @@ export const ExternalFramePanel = withTranslation()(
 
 			let dragAllowed = false
 			if (e.dataTransfer) {
-				if (
-					e.dataTransfer
-						.getData('Text')
-						.trim()
-						.endsWith('</mos>')
-				) {
+				if (e.dataTransfer.getData('Text').trim().endsWith('</mos>')) {
 					// this is quite probably a MOS object
 					dragAllowed = true
 				} else if (
@@ -410,14 +405,8 @@ export const ExternalFramePanel = withTranslation()(
 		}
 
 		onDrop = (e: DragEvent) => {
-			// console.log(e)
 			if (e.dataTransfer) {
-				if (
-					e.dataTransfer
-						.getData('Text')
-						.trim()
-						.endsWith('</mos>')
-				) {
+				if (e.dataTransfer.getData('Text').trim().endsWith('</mos>')) {
 					// this is quite probably a MOS object, let's try and ingest it
 					this.actMOSMessage(e, e.dataTransfer.getData('Text'))
 				} else if (
@@ -522,7 +511,8 @@ export const ExternalFramePanel = withTranslation()(
 						{
 							visibility: this.props.visible ? 'visible' : 'hidden',
 						}
-					)}>
+					)}
+				>
 					<iframe
 						ref={this.setElement}
 						className="external-frame-panel__iframe"
@@ -532,7 +522,8 @@ export const ExternalFramePanel = withTranslation()(
 							transform: `scale(${scale})`,
 							width: `calc(100% / ${scale})`,
 							height: `calc(100% / ${scale})`,
-						}}></iframe>
+						}}
+					></iframe>
 				</div>
 			)
 		}

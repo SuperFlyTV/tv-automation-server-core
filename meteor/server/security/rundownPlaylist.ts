@@ -10,6 +10,7 @@ import { isProtectedString } from '../../lib/lib'
 import { Rundown, RundownId, Rundowns } from '../../lib/collections/Rundowns'
 import { OrganizationId } from '../../lib/collections/Organization'
 import { Settings } from '../../lib/Settings'
+import { StudioId } from '../../lib/collections/Studios'
 
 type RundownPlaylistContent = { playlistId: RundownPlaylistId }
 export namespace RundownPlaylistReadAccess {
@@ -35,6 +36,19 @@ export namespace RundownPlaylistReadAccess {
 		return true
 	}
 }
+
+/**
+ * This is returned from a check of access to a playlist.
+ * Fields will be populated about the user, and the playlist if they have permission
+ */
+export interface RundownPlaylistContentAccess {
+	userId: UserId | null
+	organizationId: OrganizationId | null
+	studioId: StudioId | null
+	playlist: RundownPlaylist | null
+	cred: ResolvedCredentials | Credentials
+}
+
 export namespace RundownPlaylistContentWriteAccess {
 	export function rundown(cred0: Credentials, existingRundown: Rundown | RundownId) {
 		triggerWriteAccess()
@@ -46,27 +60,19 @@ export namespace RundownPlaylistContentWriteAccess {
 		}
 		return { ...anyContent(cred0, existingRundown.playlistId), rundown: existingRundown }
 	}
-	export function playout(cred0: Credentials, playlistId: RundownPlaylistId) {
+	export function playout(cred0: Credentials, playlistId: RundownPlaylistId): RundownPlaylistContentAccess {
 		return anyContent(cred0, playlistId)
 	}
 	/** Return credentials if writing is allowed, throw otherwise */
-	export function anyContent(
-		cred0: Credentials,
-		playlistId: RundownPlaylistId
-	): {
-		userId: UserId | null
-		organizationId: OrganizationId | null
-		studioId: RundownPlaylistId | null
-		playlist: RundownPlaylist | null
-		cred: ResolvedCredentials | Credentials
-	} {
+	export function anyContent(cred0: Credentials, playlistId: RundownPlaylistId): RundownPlaylistContentAccess {
 		triggerWriteAccess()
 		if (!Settings.enableUserAccounts) {
+			const playlist = RundownPlaylists.findOne(playlistId) || null
 			return {
 				userId: null,
 				organizationId: null,
-				studioId: playlistId,
-				playlist: RundownPlaylists.findOne(playlistId) || null,
+				studioId: playlist?.studioId || null,
+				playlist: playlist,
 				cred: cred0,
 			}
 		}
@@ -79,7 +85,7 @@ export namespace RundownPlaylistContentWriteAccess {
 		return {
 			userId: cred.user._id,
 			organizationId: cred.organization._id,
-			studioId: playlistId,
+			studioId: access.document?.studioId || null,
 			playlist: access.document,
 			cred: cred,
 		}

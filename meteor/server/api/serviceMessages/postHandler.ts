@@ -1,6 +1,5 @@
 import { IncomingMessage, ServerResponse } from 'http'
 import { logger } from '../../logging'
-import { stat } from 'fs'
 import { ServiceMessage, Criticality } from '../../../lib/collections/CoreSystem'
 import { writeMessage } from './serviceMessagesApi'
 import moment from 'moment'
@@ -66,7 +65,7 @@ function postHandler(params, req: BodyParsingIncomingMessage, res: ServerRespons
 		criticality: Number(criticality),
 		message,
 		sender,
-		timestamp: new Date(timestamp),
+		timestamp: new Date(timestamp).getTime(),
 	} as ServiceMessage
 
 	try {

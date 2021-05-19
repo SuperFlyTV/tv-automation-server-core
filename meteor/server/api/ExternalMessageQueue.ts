@@ -12,7 +12,7 @@ import {
 	IBlueprintExternalMessageQueueObj,
 	IBlueprintExternalMessageQueueType,
 	ExternalMessageQueueObjRabbitMQ,
-} from 'tv-automation-sofie-blueprints-integration'
+} from '@sofie-automation/blueprints-integration'
 import { getCurrentTime, removeNullyProperties, getRandomId, makePromise, protectString, omit } from '../../lib/lib'
 import { registerClassToMeteorMethods } from '../methods'
 import { Rundown } from '../../lib/collections/Rundowns'
@@ -23,10 +23,14 @@ import { sendRabbitMQMessage } from './integration/rabbitMQ'
 import { StatusObject, StatusCode, setSystemStatus } from '../systemStatus/systemStatus'
 import { MethodContextAPI, MethodContext } from '../../lib/api/methods'
 import { StudioContentWriteAccess } from '../security/studio'
-import { triggerWriteAccess, triggerWriteAccessBecauseNoCheckNecessary } from '../security/lib/securityVerify'
+import { triggerWriteAccessBecauseNoCheckNecessary } from '../security/lib/securityVerify'
 import { MongoModifier } from '../../lib/typings/meteor'
+import { ReadonlyDeep } from 'type-fest'
 
-export function queueExternalMessages(rundown: Rundown, messages: Array<IBlueprintExternalMessageQueueObj>) {
+export function queueExternalMessages(
+	rundown: ReadonlyDeep<Rundown>,
+	messages: Array<IBlueprintExternalMessageQueueObj>
+) {
 	const playlist = rundown.getRundownPlaylist()
 
 	_.each(messages, (message: IBlueprintExternalMessageQueueObj) => {
@@ -107,7 +111,6 @@ Meteor.startup(() => {
 	triggerdoMessageQueue(5000)
 })
 function doMessageQueue() {
-	// console.log('doMessageQueue', ExternalMessageQueue.find().fetch())
 	let tryInterval = 1 * 60 * 1000 // 1 minute
 	let limit = errorOnLastRunCount === 0 ? 100 : 5 // if there were errors on last send, don't run too many next time
 	let probablyHasMoreToSend = false
@@ -135,11 +138,11 @@ function doMessageQueue() {
 		errorOnLastRunCount = 0
 
 		let ps: Array<Promise<any>> = []
-		// console.log('>>>', now, messagesToSend)
+
 		messagesToSend = _.filter(messagesToSend, (msg: ExternalMessageQueueObj): boolean => {
 			return msg.retryUntil === undefined || msg.manualRetry || now < msg.retryUntil
 		})
-		// console.log('<<<', now, messagesToSend)
+
 		_.each(messagesToSend, (msg) => {
 			try {
 				logger.debug(`Trying to send externalMessage, id: ${msg._id}, type: "${msg.type}"`)

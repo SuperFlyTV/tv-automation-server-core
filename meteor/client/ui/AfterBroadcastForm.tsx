@@ -2,7 +2,6 @@ import * as React from 'react'
 import * as _ from 'underscore'
 import { Translated } from '../lib/ReactMeteorData/ReactMeteorData'
 import { RundownPlaylist } from '../../lib/collections/RundownPlaylists'
-import { Rundown } from '../../lib/collections/Rundowns'
 import { withTranslation } from 'react-i18next'
 import { EditAttribute } from '../lib/EditAttribute'
 import { EvaluationBase } from '../../lib/collections/Evaluations'
@@ -92,7 +91,6 @@ export const AfterBroadcastForm = withTranslation()(
 			const { t } = this.props
 
 			let obj = this.state
-			// console.log('obj', obj)
 			return Settings.enableAfterBroadcastForm ? (
 				<div className="afterbroadcastform-container">
 					<div className="afterbroadcastform">

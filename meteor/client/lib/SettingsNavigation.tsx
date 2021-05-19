@@ -1,13 +1,11 @@
 import * as React from 'react'
-import * as _ from 'underscore'
 import { Redirect } from 'react-router'
 import { withTracker } from './ReactMeteorData/ReactMeteorData'
 import { Mongo } from 'meteor/mongo'
 import { withTranslation } from 'react-i18next'
-import { Blueprints } from '../../lib/collections/Blueprints'
-import { ShowStyleBases } from '../../lib/collections/ShowStyleBases'
 import { Studios } from '../../lib/collections/Studios'
 import { MeteorCall } from '../../lib/api/methods'
+import { assertNever } from '../../lib/lib'
 
 interface ISettingsNavigation extends ISettingsNavigationBaseProps {
 	type: SettingsNavigationType
@@ -21,6 +19,8 @@ export class SettingsNavigation extends React.Component<ISettingsNavigation> {
 			return <ShowStyle {...this.props} />
 		} else if (this.props.type === 'newshowstyle') {
 			return <NewShowStyle {...this.props} />
+		} else {
+			assertNever(this.props.type)
 		}
 
 		return <div>Unknown edit type {this.props.type}</div>
@@ -98,7 +98,6 @@ const Blueprint = wrapSettingsNavigation(
 							m['blueprintId'] = blueprintId
 							Studios.update(this.props.obj['_id'], { $set: m })
 						}
-						console.log(this.props.obj)
 						this.redirectUser('/settings/blueprint/' + blueprintId)
 					})
 					.catch(console.error)
@@ -114,7 +113,8 @@ const Blueprint = wrapSettingsNavigation(
 									this.redirectUser(
 										'/settings/blueprint/' + (this.props.attribute ? this.props.obj[this.props.attribute] : '')
 									)
-								}}>
+								}}
+							>
 								Edit Blueprint
 							</button>
 						)
@@ -126,7 +126,8 @@ const Blueprint = wrapSettingsNavigation(
 						className="btn btn-primary btn-add-new"
 						onClick={() => {
 							this.onBlueprintAdd()
-						}}>
+						}}
+					>
 						New Blueprint
 					</button>
 				)
@@ -150,7 +151,8 @@ const ShowStyle = wrapSettingsNavigation(
 							className="btn btn-primary btn-add-new"
 							onClick={() => {
 								this.redirectUser('/settings/showStyleBase/' + (this.props.attribute ? this.props.obj['_id'] : ''))
-							}}>
+							}}
+						>
 							Edit {this.props.obj[this.props.attribute]}
 						</button>
 					)
@@ -183,7 +185,8 @@ const NewShowStyle = wrapSettingsNavigation(
 						className="btn btn-primary btn-add-new"
 						onClick={() => {
 							this.onShowStyleAdd()
-						}}>
+						}}
+					>
 						New Show Style
 					</button>
 				)

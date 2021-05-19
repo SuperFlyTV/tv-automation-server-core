@@ -1,29 +1,31 @@
-import { Meteor } from 'meteor/meteor'
 import * as MOS from 'mos-connection'
 import * as _ from 'underscore'
 import { setupDefaultStudioEnvironment } from '../../../../../__mocks__/helpers/database'
 import { testInFiber } from '../../../../../__mocks__/helpers/jest'
 import { Rundowns, Rundown, DBRundown } from '../../../../../lib/collections/Rundowns'
-import { Segments as _Segments, DBSegment, Segment, SegmentId } from '../../../../../lib/collections/Segments'
-import { Parts as _Parts, DBPart, Part } from '../../../../../lib/collections/Parts'
+import { Segments, DBSegment, SegmentId, Segment } from '../../../../../lib/collections/Segments'
+import { Parts, DBPart, Part } from '../../../../../lib/collections/Parts'
 import { PeripheralDevice } from '../../../../../lib/collections/PeripheralDevices'
 import { literal, waitForPromise, protectString } from '../../../../../lib/lib'
 
 import { mockRO } from './mock-mos-data'
-import { UpdateNext } from '../../updateNext'
-import { mockupCollection } from '../../../../../__mocks__/helpers/lib'
 import { fixSnapshot } from '../../../../../__mocks__/helpers/snapshot'
 import { Pieces } from '../../../../../lib/collections/Pieces'
 import { RundownPlaylists, RundownPlaylist } from '../../../../../lib/collections/RundownPlaylists'
 import { MeteorCall } from '../../../../../lib/api/methods'
 import { IngestDataCache, IngestCacheType } from '../../../../../lib/collections/IngestDataCache'
+import { getPartId } from '../../lib'
+import { PartInstance } from '../../../../../lib/collections/PartInstances'
+import { resetRandomId, restartRandomId } from '../../../../../__mocks__/random'
 
 jest.mock('../../updateNext')
+import { ensureNextPartIsValid } from '../../updateNext'
+import { UserActionsLog } from '../../../../../lib/collections/UserActionsLog'
+type TensureNextPartIsValid = jest.MockedFunction<typeof ensureNextPartIsValid>
+const ensureNextPartIsValidMock = ensureNextPartIsValid as TensureNextPartIsValid
 
 require('../../../peripheralDevice.ts') // include in order to create the Meteor methods needed
-
-const Segments = mockupCollection(_Segments)
-const Parts = mockupCollection(_Parts)
+require('../../../userActions.ts') // include in order to create the Meteor methods needed
 
 function getPartIdMap(segments: DBSegment[], parts: DBPart[]) {
 	const sortedParts = RundownPlaylist._sortPartsInner(parts, segments)
@@ -43,8 +45,26 @@ function getPartIdMap(segments: DBSegment[], parts: DBPart[]) {
 describe('Test recieved mos ingest payloads', () => {
 	let device: PeripheralDevice
 	beforeAll(() => {
+		// Start with ids not at the beginning
+		resetRandomId()
+		resetRandomId()
+
 		device = setupDefaultStudioEnvironment().ingestDevice
 	})
+	beforeEach(() => {
+		restartRandomId()
+
+		ensureNextPartIsValidMock.mockClear()
+		UserActionsLog.remove({})
+	})
+
+	function resetOrphanedRundown() {
+		Rundowns.update({}, { $unset: { orphaned: 1 } })
+		// Reset RO
+		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+
+		ensureNextPartIsValidMock.mockClear()
+	}
 
 	testInFiber('mosRoCreate', () => {
 		// setLoggerLevel('debug')
@@ -112,10 +132,46 @@ describe('Test recieved mos ingest payloads', () => {
 		expect(fixSnapshot(Segments.find({ rundownId: rundown._id }).fetch(), true)).toMatchSnapshot()
 		expect(fixSnapshot(Parts.find({ rundownId: rundown._id }).fetch(), true)).toMatchSnapshot()
 	})
+	testInFiber('mosRoCreate: replace deleted', () => {
+		const roData = mockRO.roCreate()
+
+		Rundowns.update({ externalId: roData.ID.toString() }, { $set: { orphaned: 'deleted' } })
+		expect(Rundowns.findOne({ externalId: roData.ID.toString() })).toBeTruthy()
+
+		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, roData))
+
+		const rundownPlaylist = RundownPlaylists.findOne() as RundownPlaylist
+		const rundown = Rundowns.findOne() as Rundown
+		expect(rundownPlaylist).toMatchObject({
+			externalId: rundown._id,
+		})
+
+		expect(rundown).toMatchObject({
+			externalId: roData.ID.toString(),
+			playlistId: rundownPlaylist._id,
+		})
+
+		expect(rundown.orphaned).toBeUndefined()
+	})
+	testInFiber('mosRoDelete: already orphaned rundown', () => {
+		const roData = mockRO.roCreate()
+		Rundowns.update({ externalId: roData.ID.toString() }, { $set: { orphaned: 'deleted' } })
+
+		const rundown = Rundowns.findOne({ externalId: roData.ID.toString() }) as DBRundown
+		expect(rundown).toBeTruthy()
+		expect(RundownPlaylists.findOne(rundown.playlistId)).toBeTruthy()
+
+		waitForPromise(MeteorCall.peripheralDevice.mosRoDelete(device._id, device.token, roData.ID))
+
+		expect(Rundowns.findOne()).toBeTruthy()
+	})
 	testInFiber('mosRoDelete', () => {
+		resetOrphanedRundown()
+
 		const roData = mockRO.roCreate()
 		const rundown = Rundowns.findOne({ externalId: roData.ID.toString() }) as DBRundown
 		expect(rundown).toBeTruthy()
+		expect(rundown.orphaned).toBeFalsy()
 		expect(RundownPlaylists.findOne(rundown.playlistId)).toBeTruthy()
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoDelete(device._id, device.token, roData.ID))
@@ -171,7 +227,31 @@ describe('Test recieved mos ingest payloads', () => {
 		expect(fixSnapshot(Parts.find({ rundownId: rundown._id }).fetch(), true)).toMatchSnapshot()
 	})
 
+	testInFiber('mosRoStatus: orphaned rundown', () => {
+		Rundowns.update({}, { $set: { orphaned: 'deleted' } })
+
+		const newStatus = MOS.IMOSObjectStatus.UPDATED
+
+		let rundown = Rundowns.findOne() as Rundown
+		expect(rundown).toBeTruthy()
+		expect(rundown.status).not.toEqual(newStatus.toString())
+
+		const payload = literal<MOS.IMOSRunningOrderStatus>({
+			ID: new MOS.MosString128(rundown.externalId),
+			Status: newStatus,
+			Time: new MOS.MosTime(0),
+		})
+
+		waitForPromise(MeteorCall.peripheralDevice.mosRoStatus(device._id, device.token, payload))
+
+		rundown = Rundowns.findOne({ _id: rundown._id }) as Rundown
+		expect(rundown).toBeTruthy()
+		expect(rundown.status).not.toEqual(newStatus.toString())
+	})
+
 	testInFiber('mosRoStatus: Missing ro', () => {
+		resetOrphanedRundown()
+
 		const newStatus = MOS.IMOSObjectStatus.BUSY
 
 		const externalId = 'fakeId'
@@ -215,7 +295,30 @@ describe('Test recieved mos ingest payloads', () => {
 		expect(fixSnapshot(Parts.find({ rundownId: rundown._id }).fetch(), true)).toMatchSnapshot()
 	})
 
+	testInFiber('mosRoReadyToAir: orphaned rundown', () => {
+		Rundowns.update({}, { $set: { orphaned: 'deleted' } })
+
+		const newStatus = MOS.IMOSObjectAirStatus.NOT_READY
+
+		let rundown = Rundowns.findOne() as Rundown
+		expect(rundown).toBeTruthy()
+		expect(rundown.status).not.toEqual(newStatus.toString())
+
+		const payload = literal<MOS.IMOSROReadyToAir>({
+			ID: new MOS.MosString128(rundown.externalId),
+			Status: newStatus,
+		})
+
+		waitForPromise(MeteorCall.peripheralDevice.mosRoReadyToAir(device._id, device.token, payload))
+
+		rundown = Rundowns.findOne({ _id: rundown._id }) as Rundown
+		expect(rundown).toBeTruthy()
+		expect(rundown.airStatus).not.toEqual(newStatus.toString())
+	})
+
 	testInFiber('mosRoReadyToAir: Missing ro', () => {
+		resetOrphanedRundown()
+
 		const newStatus = MOS.IMOSObjectAirStatus.READY
 
 		const externalId = 'fakeId'
@@ -263,7 +366,7 @@ describe('Test recieved mos ingest payloads', () => {
 		expect(fixSnapshot(Pieces.find({ rundownId: rundown._id }).fetch(), true)).toMatchSnapshot()
 	})
 
-	testInFiber('mosRoStatus: Wrong ro for part', () => {
+	testInFiber('mosRoStoryStatus: Wrong ro for part', () => {
 		const newStatus = MOS.IMOSObjectStatus.STOP
 
 		const rundownExternalId = 'fakeId'
@@ -288,7 +391,7 @@ describe('Test recieved mos ingest payloads', () => {
 		}
 	})
 
-	testInFiber('mosRoStatus: Missing part', () => {
+	testInFiber('mosRoStoryStatus: Missing part', () => {
 		const newStatus = MOS.IMOSObjectStatus.PLAY
 
 		const rundown = Rundowns.findOne() as Rundown
@@ -327,12 +430,7 @@ describe('Test recieved mos ingest payloads', () => {
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStoryInsert(device._id, device.token, action, [newPartData]))
 
-		expect(UpdateNext.afterInsertParts).toHaveBeenCalledWith(
-			expect.anything(),
-			playlist,
-			[newPartData.ID.toString()],
-			false
-		)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
 		const segments = rundown.getSegments()
 		const parts = rundown.getParts({}, undefined, segments)
@@ -357,7 +455,33 @@ describe('Test recieved mos ingest payloads', () => {
 		})
 	})
 
+	testInFiber('mosRoStoryInsert: orphaned rundown', () => {
+		Rundowns.update({}, { $set: { orphaned: 'deleted' } })
+
+		const playlist = RundownPlaylists.findOne() as RundownPlaylist
+		expect(playlist).toBeTruthy()
+		const rundowns = playlist.getRundowns()
+		expect(rundowns).toHaveLength(1)
+		const rundown = rundowns[0]
+
+		const newPartData = mockRO.newItem('ro1;s1;newPart2', 'SEGMENT1;new2')
+
+		const action = literal<MOS.IMOSStoryAction>({
+			RunningOrderID: new MOS.MosString128(rundown.externalId),
+			StoryID: new MOS.MosString128('ro1;s1;p3'),
+		})
+
+		waitForPromise(MeteorCall.peripheralDevice.mosRoStoryInsert(device._id, device.token, action, [newPartData]))
+
+		const parts = rundown.getParts()
+
+		expect(Rundowns.findOne(rundown._id)?.orphaned).toEqual('deleted')
+		expect(parts.find((p) => p.externalId === newPartData.ID.toString())).toBeUndefined()
+	})
+
 	testInFiber('mosRoStoryInsert: New segment', () => {
+		resetOrphanedRundown()
+
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
 		const rundowns = playlist.getRundowns()
@@ -373,12 +497,7 @@ describe('Test recieved mos ingest payloads', () => {
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStoryInsert(device._id, device.token, action, [newPartData]))
 
-		expect(UpdateNext.afterInsertParts).toHaveBeenCalledWith(
-			expect.anything(),
-			playlist,
-			[newPartData.ID.toString()],
-			false
-		)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
 		const segments = rundown.getSegments()
 		const parts = rundown.getParts({}, undefined, segments)
@@ -475,8 +594,7 @@ describe('Test recieved mos ingest payloads', () => {
 	// })
 
 	testInFiber('mosRoStoryReplace: Same segment', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
@@ -495,12 +613,7 @@ describe('Test recieved mos ingest payloads', () => {
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStoryReplace(device._id, device.token, action, [newPartData]))
 
-		expect(UpdateNext.afterInsertParts).toHaveBeenCalledWith(
-			expect.anything(),
-			playlist,
-			[newPartData.ID.toString()],
-			true
-		)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
 		const segments = rundown.getSegments()
 		const parts = rundown.getParts({}, undefined, segments)
@@ -515,7 +628,34 @@ describe('Test recieved mos ingest payloads', () => {
 		expect(fixSnapshot(Parts.find({ rundownId: rundown._id }).fetch(), true)).toMatchSnapshot()
 		expect(fixSnapshot(Pieces.find({ rundownId: rundown._id }).fetch(), true)).toMatchSnapshot()
 	})
+
+	testInFiber('mosRoStoryReplace: orphaned rundown', () => {
+		Rundowns.update({}, { $set: { orphaned: 'deleted' } })
+
+		const playlist = RundownPlaylists.findOne() as RundownPlaylist
+		expect(playlist).toBeTruthy()
+		const rundowns = playlist.getRundowns()
+		expect(rundowns).toHaveLength(1)
+		const rundown = rundowns[0]
+
+		const newPartData = mockRO.newItem('ro1;s1;newPart2', 'SEGMENT1;new2')
+
+		const action = literal<MOS.IMOSStoryAction>({
+			RunningOrderID: new MOS.MosString128(rundown.externalId),
+			StoryID: new MOS.MosString128('ro1;s1;p3'),
+		})
+
+		waitForPromise(MeteorCall.peripheralDevice.mosRoStoryReplace(device._id, device.token, action, [newPartData]))
+
+		const parts = rundown.getParts()
+
+		expect(Rundowns.findOne(rundown._id)?.orphaned).toEqual('deleted')
+		expect(parts.find((p) => p.externalId === newPartData.ID.toString())).toBeUndefined()
+	})
+
 	testInFiber('mosRoStoryReplace: Unknown ID', () => {
+		resetOrphanedRundown()
+
 		const rundown = Rundowns.findOne() as Rundown
 		expect(rundown).toBeTruthy()
 
@@ -541,8 +681,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStoryDelete: Remove segment', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
@@ -560,7 +699,7 @@ describe('Test recieved mos ingest payloads', () => {
 
 		expect(Parts.find({ externalId: { $in: partExternalIds } }).count()).toEqual(0)
 
-		expect(UpdateNext.ensureNextPartIsValid).toHaveBeenCalledWith(expect.anything(), playlist)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
 		const segments = rundown.getSegments()
 		const parts = rundown.getParts({}, undefined, segments)
@@ -600,8 +739,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoFullStory: Valid data', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const rundown = Rundowns.findOne() as Rundown
 		expect(rundown).toBeTruthy()
@@ -640,7 +778,7 @@ describe('Test recieved mos ingest payloads', () => {
 			fail('expected to throw')
 		} catch (e) {
 			expect(e.message).toBe(
-				`[404] Part "${story.ID.toString()}" in rundown "${rundown.externalId}" is missing cached ingest data`
+				`[500] handleMosFullStory: Missing MOS Story "${story.ID}" in Rundown ingest data for "${rundown.externalId}"`
 			)
 		}
 	})
@@ -659,13 +797,12 @@ describe('Test recieved mos ingest payloads', () => {
 			waitForPromise(MeteorCall.peripheralDevice.mosRoFullStory(device._id, device.token, story))
 			fail('expected to throw')
 		} catch (e) {
-			expect(e.message).toMatch(/not found/)
+			expect(e.message).toBe(`[500] handleMosFullStory: Missing MOS Rundown "${story.RunningOrderId}"`)
 		}
 	})
 
 	testInFiber('mosRoStorySwap: Within same segment', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
@@ -681,7 +818,7 @@ describe('Test recieved mos ingest payloads', () => {
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStorySwap(device._id, device.token, action, story0, story1))
 
-		expect(UpdateNext.ensureNextPartIsValid).toHaveBeenCalledWith(expect.anything(), playlist)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
 		const segments = rundown.getSegments()
 		const parts = rundown.getParts({}, undefined, segments)
@@ -699,8 +836,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStorySwap: With first in same segment', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
@@ -716,7 +852,7 @@ describe('Test recieved mos ingest payloads', () => {
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStorySwap(device._id, device.token, action, story0, story1))
 
-		expect(UpdateNext.ensureNextPartIsValid).toHaveBeenCalledWith(expect.anything(), playlist)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
 		const segments = rundown.getSegments()
 		const parts = rundown.getParts({}, undefined, segments)
@@ -779,8 +915,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStorySwap: Swap across segments', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
@@ -796,7 +931,7 @@ describe('Test recieved mos ingest payloads', () => {
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStorySwap(device._id, device.token, action, story0, story1))
 
-		expect(UpdateNext.ensureNextPartIsValid).toHaveBeenCalledWith(expect.anything(), playlist)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
 		const segments = rundown.getSegments()
 		const parts = rundown.getParts({}, undefined, segments)
@@ -804,7 +939,7 @@ describe('Test recieved mos ingest payloads', () => {
 		const partMap = mockRO.segmentIdMap()
 		partMap[1].parts.push('ro1;s4;p1')
 		partMap[2].segmentId = 'sLfUx9cadyquE07Vw9byoX35G9I_'
-		partMap[2].parts = partMap[2].parts.reverse()
+		partMap[2].parts.reverse()
 		partMap.splice(3, 1)
 		expect(getPartIdMap(segments, parts)).toEqual(partMap)
 
@@ -816,8 +951,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStorySwap: Swap across segments2', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
@@ -833,7 +967,7 @@ describe('Test recieved mos ingest payloads', () => {
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStorySwap(device._id, device.token, action, story0, story1))
 
-		expect(UpdateNext.ensureNextPartIsValid).toHaveBeenCalledWith(expect.anything(), playlist)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
 		// Don't care about the result here, just making sure there isnt an exception while updating the db
 
@@ -845,8 +979,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStoryMove: Within segment', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
@@ -864,9 +997,9 @@ describe('Test recieved mos ingest payloads', () => {
 			MeteorCall.peripheralDevice.mosRoStoryMove(device._id, device.token, action, [new MOS.MosString128(story0)])
 		)
 
-		expect(UpdateNext.ensureNextPartIsValid).toHaveBeenCalledWith(expect.anything(), playlist)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
-		const { segments, parts } = waitForPromise(playlist.getSegmentsAndParts())
+		const { segments, parts } = playlist.getSegmentsAndPartsSync()
 		const partMap = mockRO.segmentIdMap()
 		partMap[0].parts[1] = 'ro1;s1;p3'
 		partMap[0].parts[2] = 'ro1;s1;p2'
@@ -880,8 +1013,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStoryMove: Move whole segment to end', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toBeTruthy()
@@ -901,9 +1033,9 @@ describe('Test recieved mos ingest payloads', () => {
 
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStoryMove(device._id, device.token, action, stories))
 
-		expect(UpdateNext.ensureNextPartIsValid).toHaveBeenCalledWith(expect.anything(), playlist)
+		expect(ensureNextPartIsValid).toHaveBeenCalledTimes(1)
 
-		const { segments, parts } = waitForPromise(playlist.getSegmentsAndParts())
+		const { segments, parts } = playlist.getSegmentsAndPartsSync()
 		const partMap = mockRO.segmentIdMap()
 		const old = partMap.splice(0, 1)
 		partMap.splice(3, 0, ...old)
@@ -917,8 +1049,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStoryMove: Invalid before ID', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const rundown = Rundowns.findOne() as Rundown
 		expect(rundown).toBeTruthy()
@@ -968,8 +1099,7 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStoryMove: Bad ID', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const rundown = Rundowns.findOne() as Rundown
 		expect(rundown).toBeTruthy()
@@ -995,50 +1125,26 @@ describe('Test recieved mos ingest payloads', () => {
 	})
 
 	testInFiber('mosRoStoryDelete: Remove first story in segment', () => {
-		// Reset RO
-		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mockRO.roCreate()))
+		resetOrphanedRundown()
 
 		const rundown = Rundowns.findOne() as Rundown
 		expect(rundown).toBeTruthy()
 
 		const partExternalId = 'ro1;s1;p1'
 
-		// console.log(rundown.getParts())
-
 		const partToBeRemoved = rundown.getParts({ externalId: partExternalId })[0]
 		expect(partToBeRemoved).toBeTruthy()
 
-		Parts.update(
-			{
-				segmentId: partToBeRemoved.segmentId,
-			},
-			{
-				$set: {
-					aCheckToSeeThatThePartHasNotBeenRemoved: true,
-				},
-			},
-			{
-				multi: true,
-			}
-		)
-
 		const partsInSegmentBefore = rundown.getParts({ segmentId: partToBeRemoved.segmentId })
 		expect(partsInSegmentBefore).toHaveLength(3)
-
-		expect(partsInSegmentBefore[1]['aCheckToSeeThatThePartHasNotBeenRemoved']).toEqual(true)
-		expect(partsInSegmentBefore[2]['aCheckToSeeThatThePartHasNotBeenRemoved']).toEqual(true)
 
 		const action = literal<MOS.IMOSROAction>({
 			RunningOrderID: new MOS.MosString128(rundown.externalId),
 		})
 
-		Segments.mockClear()
-		Parts.mockClear()
-
-		// This should only remove the first part in the segment. No other parts should be affected
+		// This should only remove the first part in the segment. The other parts will be regenerated
 		waitForPromise(MeteorCall.peripheralDevice.mosRoStoryDelete(device._id, device.token, action, [partExternalId]))
 
-		expect(Segments.remove).toHaveBeenCalled()
 		expect(Segments.findOne(partToBeRemoved.segmentId)).toBeFalsy()
 
 		const partAfter = Parts.findOne(partsInSegmentBefore[2]._id) as Part
@@ -1051,5 +1157,146 @@ describe('Test recieved mos ingest payloads', () => {
 		expect(partsInSegmentAfter[0]).toMatchObject(_.omit(partsInSegmentBefore[1], ['segmentId', '_rank']))
 
 		expect(partsInSegmentAfter[1]).toMatchObject(_.omit(partsInSegmentBefore[2], ['segmentId', '_rank']))
+	})
+
+	function mosReplaceBasicStory(
+		runningOrderId: string,
+		oldStoryId: string,
+		newStoryId: string,
+		newStoryName: string
+	) {
+		waitForPromise(
+			MeteorCall.peripheralDevice.mosRoStoryReplace(
+				device._id,
+				device.token,
+				literal<MOS.IMOSStoryAction>({
+					RunningOrderID: new MOS.MosString128(runningOrderId),
+					StoryID: new MOS.MosString128(oldStoryId),
+				}),
+				literal<Array<MOS.IMOSROStory>>([
+					{
+						ID: new MOS.MosString128(newStoryId),
+						Slug: new MOS.MosString128(newStoryName),
+						Items: [],
+					},
+				])
+			)
+		)
+	}
+
+	function applySegmentRenameToContents(
+		oldName: string,
+		newName: string,
+		oldSegments: Segment[],
+		newSegments: Segment[],
+		oldParts: Part[],
+		oldPartInstances: PartInstance[]
+	) {
+		for (const oldSegment of oldSegments) {
+			if (oldSegment.name === oldName) {
+				const newSegment = newSegments.find((s) => s.name === newName)
+				if (newSegment) {
+					const oldSegmentId = oldSegment._id
+					expect(oldSegmentId).not.toEqual(newSegment._id) // If the id doesn't change, then the whole test is invalid
+					oldSegment.name = newSegment.name
+					oldSegment._id = newSegment._id
+					oldSegment.externalId = newSegment.externalId
+
+					// update parts
+					for (const oldPart of oldParts) {
+						if (oldPart.segmentId === oldSegmentId) {
+							oldPart.segmentId = newSegment._id
+							oldPart.title = newSegment.name + ';' + oldPart.title.split(';')[1]
+							delete oldPart.metaData
+						}
+					}
+
+					// update partInstances
+					for (const oldPartInstance of oldPartInstances) {
+						if (oldPartInstance.segmentId === oldSegmentId) {
+							oldPartInstance.segmentId = newSegment._id
+							oldPartInstance.part.segmentId = newSegment._id
+						}
+					}
+
+					// Only the first matching segment
+					break
+				}
+			}
+		}
+	}
+
+	testInFiber('Rename segment during update while on air', () => {
+		resetOrphanedRundown()
+
+		const rundown = Rundowns.findOne() as Rundown
+		expect(rundown).toBeTruthy()
+
+		// activate and set on air
+		waitForPromise(MeteorCall.userAction.activate('', rundown.playlistId, true))
+		waitForPromise(MeteorCall.userAction.setNext('', rundown.playlistId, getPartId(rundown._id, 'ro1;s2;p1')))
+		waitForPromise(MeteorCall.userAction.take('', rundown.playlistId))
+
+		const partInstances0 = rundown.getAllPartInstances()
+		const { segments: segments0, parts: parts0 } = rundown.getSegmentsAndPartsSync()
+
+		mosReplaceBasicStory(rundown.externalId, 'ro1;s2;p1', 'ro1;s2;p1', 'SEGMENT2b;PART1')
+		mosReplaceBasicStory(rundown.externalId, 'ro1;s2;p2', 'ro1;s2;p2', 'SEGMENT2b;PART2')
+
+		const partInstances = rundown.getAllPartInstances()
+		const { segments, parts } = rundown.getSegmentsAndPartsSync()
+
+		// Update expected data, for just the segment name and ids changing
+		applySegmentRenameToContents('SEGMENT2', 'SEGMENT2b', segments0, segments, parts0, partInstances0)
+
+		expect(fixSnapshot(segments)).toMatchObject(fixSnapshot(segments0))
+		expect(fixSnapshot(parts)).toMatchObject(fixSnapshot(parts0))
+		expect(fixSnapshot(partInstances)).toMatchObject(fixSnapshot(partInstances0))
+	})
+
+	testInFiber('Rename segment during resync while on air', () => {
+		const mosRO = mockRO.roCreate()
+
+		resetOrphanedRundown()
+
+		const rundown = Rundowns.findOne() as Rundown
+		expect(rundown).toBeTruthy()
+		expect(rundown.orphaned).toBeFalsy()
+
+		// activate and set on air
+		waitForPromise(MeteorCall.userAction.activate('', rundown.playlistId, true))
+		waitForPromise(MeteorCall.userAction.setNext('', rundown.playlistId, getPartId(rundown._id, 'ro1;s2;p1')))
+		waitForPromise(MeteorCall.userAction.take('', rundown.playlistId))
+
+		const partInstances0 = rundown.getAllPartInstances()
+		const { segments: segments0, parts: parts0 } = rundown.getSegmentsAndPartsSync()
+
+		// rename the segment
+		for (const story of mosRO.Stories) {
+			// mutate the slugs of the second segment
+			if (story.Slug && story.ID.toString().match(/;s2;/i)) {
+				story.Slug = new MOS.MosString128('SEGMENT2b;' + story.Slug.toString().split(';')[1])
+			}
+		}
+
+		// regenerate the rundown
+		waitForPromise(MeteorCall.peripheralDevice.mosRoCreate(device._id, device.token, mosRO))
+
+		{
+			// still valid
+			const rundown2 = Rundowns.findOne() as Rundown
+			expect(rundown2).toBeTruthy()
+			expect(rundown2.orphaned).toBeFalsy()
+		}
+
+		const partInstances = rundown.getAllPartInstances()
+		const { segments, parts } = rundown.getSegmentsAndPartsSync()
+
+		// Update expected data, for just the segment name and ids changing
+		applySegmentRenameToContents('SEGMENT2', 'SEGMENT2b', segments0, segments, parts0, partInstances0)
+
+		expect(fixSnapshot(segments)).toMatchObject(fixSnapshot(segments0))
+		expect(fixSnapshot(parts)).toMatchObject(fixSnapshot(parts0))
+		expect(fixSnapshot(partInstances)).toMatchObject(fixSnapshot(partInstances0))
 	})
 })

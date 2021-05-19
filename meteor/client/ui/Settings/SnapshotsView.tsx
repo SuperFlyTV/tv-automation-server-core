@@ -233,26 +233,27 @@ export default translateWithTracker<IProps, IState, ITrackedProps>(() => {
 							<div>
 								<h3 className="mhn">{t('Full System Snapshot')}</h3>
 								<p className="mhn">
-									<i>
+									<span className="text-s vsubtle">
 										{t(
 											'A Full System Snapshot contains all system settings (studios, showstyles, blueprints, devices, etc.)'
 										)}
-									</i>
+									</span>
 								</p>
 								<div>
 									<button
 										className="btn btn-primary"
 										onClick={() => {
 											this.takeSystemSnapshot(null)
-										}}>
+										}}
+									>
 										{t('Take a Full System Snapshot')}
 									</button>
 								</div>
 								{this.props.studios.length > 1 ? (
 									<div>
 										<h3 className="mhn">{t('Studio Snapshot')}</h3>
-										<p className="mhn">
-											<i>{t('A Studio Snapshot contains all system settings related to that studio')}</i>
+										<p className="mhn text-s dimmed">
+											{t('A Studio Snapshot contains all system settings related to that studio')}
 										</p>
 										{_.map(this.props.studios, (studio) => {
 											return (
@@ -261,7 +262,8 @@ export default translateWithTracker<IProps, IState, ITrackedProps>(() => {
 														className="btn btn-primary"
 														onClick={() => {
 															this.takeSystemSnapshot(studio._id)
-														}}>
+														}}
+													>
 														{t('Take a Snapshot for studio "{{studioName}}" only', { studioName: studio.name })}
 													</button>
 												</div>
@@ -277,7 +279,8 @@ export default translateWithTracker<IProps, IState, ITrackedProps>(() => {
 								accept="application/json,.json"
 								className="btn btn-secondary"
 								onChange={(e) => this.onUploadFile(e)}
-								key={this.state.uploadFileKey}>
+								key={this.state.uploadFileKey}
+							>
 								<FontAwesomeIcon icon={faUpload} />
 								<span>{t('Upload Snapshot')}</span>
 							</UploadButton>
@@ -301,7 +304,8 @@ export default translateWithTracker<IProps, IState, ITrackedProps>(() => {
 														className="btn mod mhm"
 														onClick={() => {
 															this.restoreStoredSnapshot(snapshot._id)
-														}}>
+														}}
+													>
 														{t('Restore')}
 													</button>
 												</td>
@@ -330,8 +334,9 @@ export default translateWithTracker<IProps, IState, ITrackedProps>(() => {
 															onClick={(e) => {
 																e.preventDefault()
 																this.editSnapshot(snapshot._id)
-															}}>
-															<i>{multilineText(snapshot.comment)}</i>
+															}}
+														>
+															<span className="text-s vsubtle">{multilineText(snapshot.comment)}</span>
 														</a>
 													)}
 												</td>
@@ -341,7 +346,8 @@ export default translateWithTracker<IProps, IState, ITrackedProps>(() => {
 															className="btn mod mhm btn-secondary"
 															onClick={() => {
 																this.removeStoredSnapshot(snapshot._id)
-															}}>
+															}}
+														>
 															{t('Remove')}
 														</button>
 													</td>
@@ -357,7 +363,8 @@ export default translateWithTracker<IProps, IState, ITrackedProps>(() => {
 									onClick={(e) => {
 										e.preventDefault()
 										this.toggleRemoveView()
-									}}>
+									}}
+								>
 									{t('Show "Remove snapshots"-buttons')}
 								</a>
 							</div>

@@ -2,6 +2,7 @@ import { RundownId } from '../collections/Rundowns'
 import { SegmentId } from '../collections/Segments'
 import { PartId } from '../collections/Parts'
 import { PieceId } from '../collections/Pieces'
+import { ITranslatableMessage } from './TranslatableMessage'
 
 export enum NoteType {
 	WARNING = 1,
@@ -9,13 +10,14 @@ export enum NoteType {
 }
 export interface INoteBase {
 	type: NoteType
-	message: string
+	message: ITranslatableMessage
 }
 
 export interface TrackedNote extends GenericNote {
 	rank: number
 	origin: {
 		name: string
+		segmentName?: string
 		rundownId?: RundownId
 		segmentId?: SegmentId
 		partId?: PartId

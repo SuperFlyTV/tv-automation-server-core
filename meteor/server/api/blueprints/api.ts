@@ -1,14 +1,20 @@
 import * as _ from 'underscore'
+import path from 'path'
+import { promises as fsPromise } from 'fs'
 import { getCurrentTime, protectString, unprotectString, getRandomId, makePromise } from '../../../lib/lib'
 import { logger } from '../../logging'
 import { Meteor } from 'meteor/meteor'
 import { Blueprints, Blueprint, BlueprintId } from '../../../lib/collections/Blueprints'
-import { BlueprintManifestType, SomeBlueprintManifest } from 'tv-automation-sofie-blueprints-integration'
+import {
+	BlueprintManifestType,
+	SomeBlueprintManifest,
+	TranslationsBundle,
+} from '@sofie-automation/blueprints-integration'
 import { check, Match } from '../../../lib/check'
 import { NewBlueprintAPI, BlueprintAPIMethods } from '../../../lib/api/blueprint'
 import { registerClassToMeteorMethods } from '../../methods'
-import { parseVersion, parseRange, CoreSystem, SYSTEM_ID } from '../../../lib/collections/CoreSystem'
-import { evalBlueprints } from './cache'
+import { parseVersion, parseRange, CoreSystem, SYSTEM_ID, getCoreSystem } from '../../../lib/collections/CoreSystem'
+import { evalBlueprint } from './cache'
 import { removeSystemStatus } from '../../systemStatus/systemStatus'
 import { MethodContext, MethodContextAPI } from '../../../lib/api/methods'
 import { OrganizationContentWriteAccess, OrganizationReadAccess } from '../../security/organization'
@@ -16,6 +22,8 @@ import { SystemWriteAccess } from '../../security/system'
 import { OrganizationId } from '../../../lib/collections/Organization'
 import { Credentials, isResolvedCredentials } from '../../security/lib/credentials'
 import { Settings } from '../../../lib/Settings'
+import { upsertBundles } from '../translationsBundles'
+import { fsMakeDir, fsReadFile, fsWriteFile } from '../../lib'
 
 export function insertBlueprint(
 	methodContext: MethodContext,
@@ -50,7 +58,6 @@ export function insertBlueprint(
 		blueprintVersion: '',
 		integrationVersion: '',
 		TSRVersion: '',
-		minimumCoreVersion: '',
 	})
 }
 export function removeBlueprint(methodContext: MethodContext, blueprintId: BlueprintId) {
@@ -78,17 +85,48 @@ export function uploadBlueprint(
 	if (!Meteor.isTest) logger.info(`Got blueprint '${blueprintId}'. ${body.length} bytes`)
 
 	if (!blueprintId) throw new Meteor.Error(400, `Blueprint id "${blueprintId}" is not valid`)
+	const blueprint = Blueprints.findOne(blueprintId)
 
-	return innerUploadBlueprint(organizationId, undefined, blueprintId, body, blueprintName, ignoreIdChange)
+	return innerUploadBlueprint(organizationId, blueprint, blueprintId, body, blueprintName, ignoreIdChange)
+}
+export function uploadBlueprintAsset(_context: Credentials, fileId: string, body: string) {
+	check(fileId, String)
+	check(body, String)
+
+	let system = getCoreSystem()
+	if (!system) throw new Meteor.Error(500, `CoreSystem not found!`)
+	if (!system.storePath) throw new Meteor.Error(500, `CoreSystem.storePath not set!`)
+
+	// TODO: add access control here
+	const data = Buffer.from(body, 'base64')
+	const parsedPath = path.parse(fileId)
+	logger.info(
+		`Write ${data.length} bytes to ${path.join(system.storePath, fileId)} (storePath: ${
+			system.storePath
+		}, fileId: ${fileId})`
+	)
+	fsMakeDir(path.join(system.storePath, parsedPath.dir), { recursive: true })
+	fsWriteFile(path.join(system.storePath, fileId), data)
+}
+export function retrieveBlueprintAsset(_context: Credentials, fileId: string) {
+	check(fileId, String)
+
+	let system = getCoreSystem()
+	if (!system) throw new Meteor.Error(500, `CoreSystem not found!`)
+	if (!system.storePath) throw new Meteor.Error(500, `CoreSystem.storePath not set!`)
+
+	// TODO: add access control here
+	return fsReadFile(path.join(system.storePath, fileId))
 }
 /** Only to be called from internal functions */
 export function internalUploadBlueprint(
 	blueprintId: BlueprintId,
 	body: string,
 	blueprintName?: string,
-	ignoreIdChange?: boolean
+	ignoreIdChange?: boolean,
+	organizationId?: OrganizationId | null
 ): Blueprint {
-	const organizationId = null
+	organizationId = organizationId || null
 	const blueprint = Blueprints.findOne(blueprintId)
 
 	return innerUploadBlueprint(organizationId, blueprint, blueprintId, body, blueprintName, ignoreIdChange)
@@ -101,8 +139,6 @@ export function innerUploadBlueprint(
 	blueprintName?: string,
 	ignoreIdChange?: boolean
 ): Blueprint {
-	logger.info(`Got blueprint '${blueprintId}'. ${body.length} bytes`)
-
 	const newBlueprint: Blueprint = {
 		_id: blueprintId,
 		organizationId: organizationId,
@@ -122,13 +158,12 @@ export function innerUploadBlueprint(
 		blueprintVersion: '',
 		integrationVersion: '',
 		TSRVersion: '',
-		minimumCoreVersion: '',
 		blueprintType: undefined,
 	}
 
 	let blueprintManifest: SomeBlueprintManifest | undefined
 	try {
-		blueprintManifest = evalBlueprints(newBlueprint, false)
+		blueprintManifest = evalBlueprint(newBlueprint)
 	} catch (e) {
 		throw new Meteor.Error(400, `Blueprint ${blueprintId} failed to parse`)
 	}
@@ -148,7 +183,6 @@ export function innerUploadBlueprint(
 	newBlueprint.blueprintVersion = blueprintManifest.blueprintVersion
 	newBlueprint.integrationVersion = blueprintManifest.integrationVersion
 	newBlueprint.TSRVersion = blueprintManifest.TSRVersion
-	newBlueprint.minimumCoreVersion = blueprintManifest.minimumCoreVersion
 
 	if (blueprint && blueprint.blueprintType && blueprint.blueprintType !== newBlueprint.blueprintType) {
 		throw new Meteor.Error(
@@ -182,11 +216,25 @@ export function innerUploadBlueprint(
 		newBlueprint.studioConfigManifest = blueprintManifest.studioConfigManifest
 	}
 
+	// check for translations on the manifest and store them if they exist
+	if (
+		'translations' in blueprintManifest &&
+		(blueprintManifest.blueprintType === BlueprintManifestType.SHOWSTYLE ||
+			blueprintManifest.blueprintType === BlueprintManifestType.STUDIO)
+	) {
+		// Because the translations is bundled as stringified JSON and that string has already been
+		// converted back to object form together with the rest of the manifest at this point
+		// the casting is actually necessary.
+		// Note that the type has to be string in the manifest interfaces to allow attaching the
+		// stringified JSON in the first place.
+		const translations = (blueprintManifest as any).translations as TranslationsBundle[]
+		upsertBundles(translations, blueprintId)
+	}
+
 	// Parse the versions, just to verify that the format is correct:
 	parseVersion(blueprintManifest.blueprintVersion)
 	parseVersion(blueprintManifest.integrationVersion)
 	parseVersion(blueprintManifest.TSRVersion)
-	parseRange(blueprintManifest.minimumCoreVersion)
 
 	Blueprints.upsert(newBlueprint._id, newBlueprint)
 	return newBlueprint

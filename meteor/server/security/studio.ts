@@ -3,17 +3,13 @@ import { check } from '../../lib/check'
 import { allowAccessToStudio } from './lib/security'
 import { StudioId, Studios, Studio } from '../../lib/collections/Studios'
 import { MongoQuery, UserId } from '../../lib/typings/meteor'
-import * as _ from 'underscore'
-import { logNotAllowed, rejectFields } from './lib/lib'
+import { logNotAllowed } from './lib/lib'
 import {
 	ExternalMessageQueue,
 	ExternalMessageQueueObjId,
 	ExternalMessageQueueObj,
 } from '../../lib/collections/ExternalMessageQueue'
-import { RecordedFiles, RecordedFileId, RecordedFile } from '../../lib/collections/RecordedFiles'
 import { Credentials, ResolvedCredentials, resolveCredentials } from './lib/credentials'
-import { MediaObjects } from '../../lib/collections/MediaObjects'
-import { Timeline } from '../../lib/collections/Timeline'
 import { RundownPlaylist, RundownPlaylistId, RundownPlaylists } from '../../lib/collections/RundownPlaylists'
 import { Settings } from '../../lib/Settings'
 import { OrganizationId } from '../../lib/collections/Organization'
@@ -40,6 +36,19 @@ export namespace StudioReadAccess {
 		return true
 	}
 }
+
+/**
+ * This is returned from a check of access to a studio.
+ * Fields will be populated about the user, and the studio if they have permission
+ */
+export interface StudioContentAccess {
+	userId: UserId | null
+	organizationId: OrganizationId | null
+	studioId: StudioId | null
+	studio: Studio | null
+	cred: ResolvedCredentials | Credentials
+}
+
 export namespace StudioContentWriteAccess {
 	// These functions throws if access is not allowed.
 
@@ -56,21 +65,11 @@ export namespace StudioContentWriteAccess {
 	export function dataFromSnapshot(cred0: Credentials, studioId: StudioId) {
 		return anyContent(cred0, studioId)
 	}
-	export function recordedFiles(cred0: Credentials, studioId: StudioId) {
-		return anyContent(cred0, studioId)
-	}
 	export function timeline(cred0: Credentials, studioId: StudioId) {
 		return anyContent(cred0, studioId)
 	}
-	export function recordedFile(cred0: Credentials, existingFile: RecordedFile | RecordedFileId) {
-		triggerWriteAccess()
-		if (existingFile && isProtectedString(existingFile)) {
-			const fileId = existingFile
-			const m = RecordedFiles.findOne(fileId)
-			if (!m) throw new Meteor.Error(404, `RecordedFile "${fileId}" not found!`)
-			existingFile = m
-		}
-		return { ...anyContent(cred0, existingFile.studioId), file: existingFile }
+	export function routeSet(cred0: Credentials, studioId: StudioId) {
+		return anyContent(cred0, studioId)
 	}
 	export function baseline(cred0: Credentials, studioId: StudioId) {
 		return anyContent(cred0, studioId)
@@ -92,16 +91,7 @@ export namespace StudioContentWriteAccess {
 		return { ...anyContent(cred0, existingMessage.studioId), message: existingMessage }
 	}
 	/** Return credentials if writing is allowed, throw otherwise */
-	export function anyContent(
-		cred0: Credentials,
-		studioId: StudioId
-	): {
-		userId: UserId | null
-		organizationId: OrganizationId | null
-		studioId: StudioId | null
-		studio: Studio | null
-		cred: ResolvedCredentials | Credentials
-	} {
+	export function anyContent(cred0: Credentials, studioId: StudioId): StudioContentAccess {
 		triggerWriteAccess()
 		if (!Settings.enableUserAccounts) {
 			return {

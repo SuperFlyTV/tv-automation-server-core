@@ -15,15 +15,16 @@ import { doModalDialog } from '../../lib/ModalDialog'
 import { MeteorReactComponent } from '../../lib/MeteorReactComponent'
 import { callPeripheralDeviceFunction, PeripheralDevicesAPI } from '../../lib/clientAPI'
 import { NotificationCenter, NoticeLevel, Notification } from '../../lib/notifications/notifications'
-import { getAllowConfigure, getAllowDeveloper, getHelpMode } from '../../lib/localStorage'
+import { getAllowConfigure, getAllowDeveloper, getAllowStudio, getHelpMode } from '../../lib/localStorage'
 import { PubSub } from '../../../lib/api/pubsub'
 import ClassNames from 'classnames'
-import { TSR } from 'tv-automation-sofie-blueprints-integration'
+import { TSR } from '@sofie-automation/blueprints-integration'
 import { CoreSystem, ICoreSystem } from '../../../lib/collections/CoreSystem'
 import { StatusResponse } from '../../../lib/api/systemStatus'
 import { doUserAction, UserAction } from '../../lib/userAction'
 import { MeteorCall } from '../../../lib/api/methods'
 import { RESTART_SALT } from '../../../lib/api/userActions'
+import { CASPARCG_RESTART_TIME } from '../../../lib/constants'
 
 interface IDeviceItemProps {
 	// key: string,
@@ -95,7 +96,7 @@ export const DeviceItem = reacti18next.withTranslation()(
 				title: t('Restart CasparCG Server'),
 				message: t('Do you want to restart CasparCG Server?'),
 				onAccept: (event: any) => {
-					callPeripheralDeviceFunction(event, device._id, 'restartCasparCG')
+					callPeripheralDeviceFunction(event, device._id, CASPARCG_RESTART_TIME, 'restartCasparCG')
 						.then(() => {
 							NotificationCenter.push(
 								new Notification(
@@ -130,7 +131,7 @@ export const DeviceItem = reacti18next.withTranslation()(
 				title: t('Restart Quantel Gateway'),
 				message: t('Do you want to restart Quantel Gateway?'),
 				onAccept: (event: any) => {
-					callPeripheralDeviceFunction(event, device._id, 'restartQuantel')
+					callPeripheralDeviceFunction(event, device._id, undefined, 'restartQuantel')
 						.then(() => {
 							NotificationCenter.push(
 								new Notification(
@@ -162,7 +163,7 @@ export const DeviceItem = reacti18next.withTranslation()(
 				title: t('Format HyperDeck disks'),
 				message: t('Do you want to format the HyperDeck disks? This is a destructive action and cannot be undone.'),
 				onAccept: (event: any) => {
-					callPeripheralDeviceFunction(event, device._id, 'formatHyperdeck')
+					callPeripheralDeviceFunction(event, device._id, undefined, 'formatHyperdeck')
 						.then(() => {
 							NotificationCenter.push(
 								new Notification(
@@ -215,7 +216,8 @@ export const DeviceItem = reacti18next.withTranslation()(
 								!this.props.hasChildren &&
 								this.props.hasChildren !== undefined
 							}
-							placement="right">
+							placement="right"
+						>
 							{getAllowConfigure() ? (
 								<div className="value">
 									<Link to={'/settings/peripheralDevice/' + this.props.device._id}>{this.props.device.name}</Link>
@@ -238,7 +240,8 @@ export const DeviceItem = reacti18next.withTranslation()(
 
 					<div className="actions-container">
 						<div className="device-item__actions">
-							{this.props.device.type === PeripheralDeviceAPI.DeviceType.PLAYOUT &&
+							{getAllowStudio() &&
+							this.props.device.type === PeripheralDeviceAPI.DeviceType.PLAYOUT &&
 							this.props.device.subType === TSR.DeviceType.CASPARCG ? (
 								<React.Fragment>
 									<button
@@ -247,13 +250,15 @@ export const DeviceItem = reacti18next.withTranslation()(
 											e.preventDefault()
 											e.stopPropagation()
 											this.onRestartCasparCG(this.props.device)
-										}}>
+										}}
+									>
 										{t('Restart')}
 										{/** IDK what this does, but it doesn't seem to make a lot of sense: JSON.stringify(this.props.device.settings) */}
 									</button>
 								</React.Fragment>
 							) : null}
-							{this.props.device.type === PeripheralDeviceAPI.DeviceType.PLAYOUT &&
+							{getAllowStudio() &&
+							this.props.device.type === PeripheralDeviceAPI.DeviceType.PLAYOUT &&
 							this.props.device.subType === TSR.DeviceType.HYPERDECK ? (
 								<React.Fragment>
 									<button
@@ -262,12 +267,14 @@ export const DeviceItem = reacti18next.withTranslation()(
 											e.preventDefault()
 											e.stopPropagation()
 											this.onFormatHyperdeck(this.props.device)
-										}}>
+										}}
+									>
 										{t('Format disks')}
 									</button>
 								</React.Fragment>
 							) : null}
-							{this.props.device.type === PeripheralDeviceAPI.DeviceType.PLAYOUT &&
+							{getAllowStudio() &&
+							this.props.device.type === PeripheralDeviceAPI.DeviceType.PLAYOUT &&
 							this.props.device.subType === TSR.DeviceType.QUANTEL ? (
 								<React.Fragment>
 									<button
@@ -276,12 +283,13 @@ export const DeviceItem = reacti18next.withTranslation()(
 											e.preventDefault()
 											e.stopPropagation()
 											this.onRestartQuantel(this.props.device)
-										}}>
+										}}
+									>
 										{t('Restart Quantel Gateway')}
 									</button>
 								</React.Fragment>
 							) : null}
-							{getAllowDeveloper() && (
+							{getAllowDeveloper() ? (
 								<button
 									key="button-ignore"
 									className={ClassNames('btn btn-secondary', {
@@ -291,11 +299,12 @@ export const DeviceItem = reacti18next.withTranslation()(
 										e.preventDefault()
 										e.stopPropagation()
 										this.onToggleIgnore(this.props.device)
-									}}>
+									}}
+								>
 									<FontAwesomeIcon icon={faEye} />
 								</button>
-							)}
-							{this.props.showRemoveButtons && (
+							) : null}
+							{this.props.showRemoveButtons ? (
 								<button
 									key="button-device"
 									className="btn btn-primary"
@@ -316,11 +325,12 @@ export const DeviceItem = reacti18next.withTranslation()(
 												MeteorCall.peripheralDevice.removePeripheralDevice(this.props.device._id).catch(console.error)
 											},
 										})
-									}}>
+									}}
+								>
 									<FontAwesomeIcon icon={faTrash} />
 								</button>
-							)}
-							{this.props.device.subType === PeripheralDeviceAPI.SUBTYPE_PROCESS ? (
+							) : null}
+							{getAllowStudio() && this.props.device.subType === PeripheralDeviceAPI.SUBTYPE_PROCESS ? (
 								<React.Fragment>
 									<button
 										className="btn btn-secondary"
@@ -339,7 +349,9 @@ export const DeviceItem = reacti18next.withTranslation()(
 																new Notification(
 																	undefined,
 																	NoticeLevel.NOTIFICATION,
-																	t('Device "{{deviceName}}" restarting...', { deviceName: this.props.device.name }),
+																	t('Device "{{deviceName}}" restarting...', {
+																		deviceName: this.props.device.name,
+																	}),
 																	'SystemStatus'
 																)
 															)
@@ -359,7 +371,8 @@ export const DeviceItem = reacti18next.withTranslation()(
 														})
 												},
 											})
-										}}>
+										}}
+									>
 										{t('Restart')}
 									</button>
 								</React.Fragment>
@@ -406,7 +419,8 @@ export const CoreItem = reacti18next.withTranslation()(
 										'device-status--warning': this.props.systemStatus.status === 'WARNING',
 										'device-status--fatal': this.props.systemStatus.status === 'FAIL',
 									}
-							)}>
+							)}
+						>
 							<div className="value">
 								<span className="pill device-status__label">
 									<a
@@ -415,7 +429,8 @@ export const CoreItem = reacti18next.withTranslation()(
 											this.props.systemStatus && this.props.systemStatus._internal.messages
 												? this.props.systemStatus._internal.messages.join('\n')
 												: undefined
-										}>
+										}
+									>
 										{this.props.systemStatus && this.props.systemStatus.status}
 									</a>
 								</span>
@@ -507,7 +522,8 @@ export const CoreItem = reacti18next.withTranslation()(
 												)
 											},
 										})
-									}}>
+									}}
+								>
 									{t('Restart')}
 								</button>
 							</div>
@@ -536,9 +552,6 @@ interface DeviceInHierarchy {
 }
 
 export default translateWithTracker<ISystemStatusProps, ISystemStatusState, ISystemStatusTrackedProps>(() => {
-	// console.log('PeripheralDevices',PeripheralDevices);
-	// console.log('PeripheralDevices.find({}).fetch()',PeripheralDevices.find({}, { sort: { created: -1 } }).fetch());
-
 	return {
 		coreSystem: CoreSystem.findOne(),
 		devices: PeripheralDevices.find({}, { sort: { lastConnected: -1 } }).fetch(),
@@ -728,7 +741,7 @@ export const PeripheralDeviceStatus = reacti18next.withTranslation()(
 						<span className="pill device-status__label">{this.statusCodeString()}</span>
 					</div>
 					<div className="device-item__device-status-message">
-						<i>{this.statusMessages()}</i>
+						<span className="text-s dimmed">{this.statusMessages()}</span>
 					</div>
 				</div>
 			)

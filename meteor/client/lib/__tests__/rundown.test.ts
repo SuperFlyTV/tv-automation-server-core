@@ -6,9 +6,6 @@ import {
 } from '../../../__mocks__/helpers/database'
 import { RundownUtils } from '../rundown'
 import { RundownPlaylists, RundownPlaylistId } from '../../../lib/collections/RundownPlaylists'
-import { PartInstance, DBPartInstance } from '../../../lib/collections/PartInstances'
-import * as _ from 'underscore'
-import { literal } from '../../../lib/lib'
 
 describe('client/lib/rundown', () => {
 	let env: DefaultEnvironment
@@ -22,11 +19,22 @@ describe('client/lib/rundown', () => {
 		const playlist = RundownPlaylists.findOne(playlistId)
 		if (!playlist) throw new Error('Rundown not found')
 
+		const { currentPartInstance, nextPartInstance } = playlist.getSelectedPartInstances()
+
 		const segments = playlist.getSegments()
+		const parts = playlist.getAllOrderedParts()
 		const segment = segments[0]
 		const nextSegment = segments[1]
 
-		const resolvedSegment = RundownUtils.getResolvedSegment(showStyleBase, playlist, segment)
+		const resolvedSegment = RundownUtils.getResolvedSegment(
+			showStyleBase,
+			playlist,
+			segment,
+			new Set(segments.slice(0, 0).map((segment) => segment._id)),
+			parts.map((part) => part._id),
+			currentPartInstance,
+			nextPartInstance
+		)
 		expect(resolvedSegment).toBeTruthy()
 		expect(resolvedSegment.parts).toHaveLength(2)
 		expect(resolvedSegment).toMatchObject({

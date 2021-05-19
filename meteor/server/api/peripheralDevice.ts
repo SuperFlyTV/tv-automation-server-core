@@ -4,19 +4,21 @@ import * as _ from 'underscore'
 import { PeripheralDeviceAPI, NewPeripheralDeviceAPI, PeripheralDeviceAPIMethods } from '../../lib/api/peripheralDevice'
 import { PeripheralDevices, PeripheralDeviceId } from '../../lib/collections/PeripheralDevices'
 import { Rundowns } from '../../lib/collections/Rundowns'
-import { getCurrentTime, protectString, makePromise, waitForPromise } from '../../lib/lib'
+import { getCurrentTime, protectString, makePromise, waitForPromise, getRandomId, applyToArray } from '../../lib/lib'
 import { PeripheralDeviceCommands, PeripheralDeviceCommandId } from '../../lib/collections/PeripheralDeviceCommands'
 import { logger } from '../logging'
-import { Timeline, getTimelineId } from '../../lib/collections/Timeline'
-import { Studios } from '../../lib/collections/Studios'
+import { Timeline, TimelineComplete, TimelineHash } from '../../lib/collections/Timeline'
 import { ServerPlayoutAPI } from './playout/playout'
 import { registerClassToMeteorMethods } from '../methods'
 import { IncomingMessage, ServerResponse } from 'http'
 import { parse as parseUrl } from 'url'
-import { syncFunction } from '../codeControl'
-import { afterUpdateTimeline } from './playout/timeline'
 import { RundownInput } from './ingest/rundownInput'
-import { IngestRundown, IngestSegment, IngestPart } from 'tv-automation-sofie-blueprints-integration'
+import {
+	IngestRundown,
+	IngestSegment,
+	IngestPart,
+	ExpectedPackageStatusAPI,
+} from '@sofie-automation/blueprints-integration'
 import { MosIntegration } from './ingest/mosDevice/mosIntegration'
 import { MediaScannerIntegration } from './integration/media-scanner'
 import { MediaObject } from '../../lib/collections/MediaObjects'
@@ -30,8 +32,19 @@ import { MethodContextAPI, MethodContext } from '../../lib/api/methods'
 import { triggerWriteAccess, triggerWriteAccessBecauseNoCheckNecessary } from '../security/lib/securityVerify'
 import { checkAccessAndGetPeripheralDevice } from './ingest/lib'
 import { PickerPOST } from './http'
-import { initCacheForNoRundownPlaylist, initCacheForStudio, initCacheForRundownPlaylist } from '../DatabaseCaches'
-import { RundownPlaylists } from '../../lib/collections/RundownPlaylists'
+import { RundownPlaylist } from '../../lib/collections/RundownPlaylists'
+import { getValidActivationCache } from '../cache/ActivationCache'
+import { UserActionsLog } from '../../lib/collections/UserActionsLog'
+import { PieceGroupMetadata } from '../../lib/rundown/pieces'
+import { PackageManagerIntegration } from './integration/expectedPackages'
+import { ExpectedPackageId } from '../../lib/collections/ExpectedPackages'
+import { ExpectedPackageWorkStatusId } from '../../lib/collections/ExpectedPackageWorkStatuses'
+import { PackageInfoDBType } from '../../lib/collections/PackageInfos'
+import { runStudioOperationWithCache, StudioLockFunctionPriority } from './studio/lockFunction'
+import { PlayoutLockFunctionPriority, runPlayoutOperationWithLockFromStudioOperation } from './playout/lockFunction'
+import { DbCacheWriteCollection } from '../cache/CacheCollection'
+import { CacheForStudio } from './studio/cache'
+import { PieceInstance, PieceInstances } from '../../lib/collections/PieceInstances'
 
 // import {ServerPeripheralDeviceAPIMOS as MOS} from './peripheralDeviceMos'
 export namespace ServerPeripheralDeviceAPI {
@@ -43,8 +56,8 @@ export namespace ServerPeripheralDeviceAPI {
 	): PeripheralDeviceId {
 		triggerWriteAccess() // This is somewhat of a hack, since we want to check if it exists at all, before checking access
 		check(deviceId, String)
-		const peripheralDevice = PeripheralDevices.findOne(deviceId)
-		if (peripheralDevice) {
+		const existingDevice = PeripheralDevices.findOne(deviceId)
+		if (existingDevice) {
 			PeripheralDeviceContentWriteAccess.peripheralDevice({ userId: context.userId, token }, deviceId)
 		}
 
@@ -57,9 +70,10 @@ export namespace ServerPeripheralDeviceAPI {
 		check(options.parentDeviceId, Match.Optional(String))
 		check(options.versions, Match.Optional(Object))
 
-		logger.debug('Initialize device ' + deviceId, options)
+		// Omitting some of the properties that tend to be rather large
+		logger.debug('Initialize device ' + deviceId, _.omit(options, 'versions', 'configManifest'))
 
-		if (peripheralDevice) {
+		if (existingDevice) {
 			PeripheralDevices.update(deviceId, {
 				$set: {
 					lastSeen: getCurrentTime(),
@@ -71,7 +85,12 @@ export namespace ServerPeripheralDeviceAPI {
 					type: options.type,
 					subType: options.subType,
 
-					name: peripheralDevice.name || options.name,
+					name:
+						// Only allow name changes if the name is unmodified:
+						existingDevice.name === existingDevice.deviceName || existingDevice.deviceName === undefined
+							? options.name
+							: existingDevice.name,
+					deviceName: options.name,
 					parentDeviceId: options.parentDeviceId,
 					versions: options.versions,
 
@@ -98,6 +117,7 @@ export namespace ServerPeripheralDeviceAPI {
 				subType: options.subType,
 
 				name: options.name,
+				deviceName: options.name,
 				parentDeviceId: options.parentDeviceId,
 				versions: options.versions,
 				// settings: {},
@@ -147,6 +167,13 @@ export namespace ServerPeripheralDeviceAPI {
 			PeripheralDevices.update(deviceId, {
 				$set: {
 					status: status,
+					connected: true,
+				},
+			})
+		} else if (!peripheralDevice.connected) {
+			PeripheralDevices.update(deviceId, {
+				$set: {
+					connected: true,
 				},
 			})
 		}
@@ -170,7 +197,12 @@ export namespace ServerPeripheralDeviceAPI {
 
 		return peripheralDevice
 	}
-	export const timelineTriggerTime = syncFunction(function timelineTriggerTime(
+
+	/**
+	 * Called from Playout-gateway when the trigger-time of a timeline object has updated
+	 * ( typically when using the "now"-feature )
+	 */
+	export function timelineTriggerTime(
 		context: MethodContext,
 		deviceId: PeripheralDeviceId,
 		token: string,
@@ -191,54 +223,134 @@ export namespace ServerPeripheralDeviceAPI {
 		})
 
 		if (results.length > 0) {
-			const activePlaylist = RundownPlaylists.findOne({
-				studioId: studioId,
-				active: true,
-			})
-			const cache = activePlaylist
-				? waitForPromise(initCacheForRundownPlaylist(activePlaylist))
-				: waitForPromise(initCacheForNoRundownPlaylist(studioId))
-			const allowedRundownsIds = activePlaylist
-				? _.map(cache.Rundowns.findFetch({ playlistId: activePlaylist._id }), (r) => r._id)
-				: []
+			runStudioOperationWithCache(
+				'timelineTriggerTime',
+				studioId,
+				StudioLockFunctionPriority.CALLBACK_PLAYOUT,
+				(studioCache) => {
+					const activePlaylists = studioCache.getActiveRundownPlaylists()
 
-			_.each(results, (o) => {
-				check(o.id, String)
+					if (activePlaylists.length === 1) {
+						const activePlaylist = activePlaylists[0]
+						const playlistId = activePlaylist._id
+						runPlayoutOperationWithLockFromStudioOperation(
+							'timelineTriggerTime',
+							studioCache,
+							activePlaylist,
+							PlayoutLockFunctionPriority.CALLBACK_PLAYOUT,
+							async () => {
+								const rundownIDs = Rundowns.find({ playlistId }).map((r) => r._id)
 
-				// check(o.time, Number)
-				logger.info('Timeline: Setting time: "' + o.id + '": ' + o.time)
+								// We only need the PieceInstances, so load just them
+								const pieceInstanceCache = new DbCacheWriteCollection<PieceInstance, PieceInstance>(
+									PieceInstances
+								)
 
-				const id = getTimelineId(studioId, o.id)
-				const obj = cache.Timeline.findOne({
-					_id: id,
-					studioId: studioId,
-				})
-				if (obj) {
-					cache.Timeline.update(
-						{
-							_id: id,
-							studioId: studioId,
-						},
-						{
-							$set: {
-								'enable.start': o.time,
-								'enable.setFromNow': true,
-							},
-						}
-					)
+								await pieceInstanceCache.prepareInit({ rundownId: { $in: rundownIDs } }, true)
 
-					obj.enable.start = o.time
-					obj.enable.setFromNow = true
+								// Take ownership of the playlist in the db, so that we can mutate the timeline and piece instances
+								timelineTriggerTimeInner(studioCache, results, pieceInstanceCache, activePlaylist)
 
-					ServerPlayoutAPI.timelineTriggerTimeUpdateCallback(context, cache, allowedRundownsIds, obj, o.time)
+								await pieceInstanceCache.updateDatabaseWithData()
+							}
+						)
+					} else {
+						timelineTriggerTimeInner(studioCache, results, undefined, undefined)
+					}
 				}
-			})
-			// After we've updated the timeline, we must call afterUpdateTimeline!
-			afterUpdateTimeline(cache, studioId)
-			waitForPromise(cache.saveAllToDatabase())
+			)
 		}
-	},
-	'timelineTriggerTime$0,$1') // kz 'timelineTriggerTime$1' maybe?
+	}
+
+	function timelineTriggerTimeInner(
+		cache: CacheForStudio,
+		results: PeripheralDeviceAPI.TimelineTriggerTimeResult,
+		pieceInstanceCache: DbCacheWriteCollection<PieceInstance, PieceInstance> | undefined,
+		activePlaylist: RundownPlaylist | undefined
+	) {
+		let lastTakeTime: number | undefined
+
+		// ------------------------------
+		let timelineObjs = cache.Timeline.findOne(cache.Studio.doc._id)?.timeline || []
+		let tlChanged = false
+
+		_.each(results, (o) => {
+			check(o.id, String)
+
+			logger.info(`Timeline: Setting time: "${o.id}": ${o.time}`)
+
+			const obj = timelineObjs.find((tlo) => tlo.id === o.id)
+			if (obj) {
+				applyToArray(obj.enable, (enable) => {
+					if (enable.start === 'now') {
+						enable.start = o.time
+						enable.setFromNow = true
+
+						tlChanged = true
+					}
+				})
+
+				// TODO - we should do the same for the partInstance.
+				// Or should we not update the now for them at all? as we should be getting the onPartPlaybackStarted immediately after
+
+				const objPieceId = (obj.metaData as Partial<PieceGroupMetadata> | undefined)?.pieceId
+				if (objPieceId && activePlaylist && pieceInstanceCache) {
+					logger.info('Update PieceInstance: ', {
+						pieceId: objPieceId,
+						time: new Date(o.time).toTimeString(),
+					})
+
+					const pieceInstance = pieceInstanceCache.findOne(objPieceId)
+					if (pieceInstance) {
+						pieceInstanceCache.update(pieceInstance._id, {
+							$set: {
+								'piece.enable.start': o.time,
+							},
+						})
+
+						const takeTime = pieceInstance.dynamicallyInserted
+						if (pieceInstance.dynamicallyInserted && takeTime) {
+							lastTakeTime = lastTakeTime === undefined ? takeTime : Math.max(lastTakeTime, takeTime)
+						}
+					}
+				}
+			}
+		})
+
+		if (lastTakeTime !== undefined && activePlaylist?.currentPartInstanceId && pieceInstanceCache) {
+			// We updated some pieceInstance from now, so lets ensure any earlier adlibs do not still have a now
+			const remainingNowPieces = pieceInstanceCache.findFetch({
+				partInstanceId: activePlaylist.currentPartInstanceId,
+				dynamicallyInserted: { $exists: true },
+				disabled: { $ne: true },
+			})
+			for (const piece of remainingNowPieces) {
+				const pieceTakeTime = piece.dynamicallyInserted
+				if (pieceTakeTime && pieceTakeTime <= lastTakeTime && piece.piece.enable.start === 'now') {
+					// Disable and hide the instance
+					pieceInstanceCache.update(piece._id, {
+						$set: {
+							disabled: true,
+							hidden: true,
+						},
+					})
+				}
+			}
+		}
+		if (tlChanged) {
+			cache.Timeline.update(
+				cache.Studio.doc._id,
+				{
+					$set: {
+						timeline: timelineObjs,
+						timelineHash: getRandomId(),
+						generated: getCurrentTime(),
+					},
+				},
+				true
+			)
+		}
+	}
 	export function partPlaybackStarted(
 		context: MethodContext,
 		deviceId: PeripheralDeviceId,
@@ -250,10 +362,10 @@ export namespace ServerPeripheralDeviceAPI {
 		const peripheralDevice = checkAccessAndGetPeripheralDevice(deviceId, token, context)
 
 		check(r.time, Number)
-		check(r.rundownId, String)
+		check(r.rundownPlaylistId, String)
 		check(r.partInstanceId, String)
 
-		ServerPlayoutAPI.onPartPlaybackStarted(context, r.rundownId, r.partInstanceId, r.time)
+		ServerPlayoutAPI.onPartPlaybackStarted(context, peripheralDevice, r.rundownPlaylistId, r.partInstanceId, r.time)
 	}
 	export function partPlaybackStopped(
 		context: MethodContext,
@@ -265,10 +377,10 @@ export namespace ServerPeripheralDeviceAPI {
 		const peripheralDevice = checkAccessAndGetPeripheralDevice(deviceId, token, context)
 
 		check(r.time, Number)
-		check(r.rundownId, String)
+		check(r.rundownPlaylistId, String)
 		check(r.partInstanceId, String)
 
-		ServerPlayoutAPI.onPartPlaybackStopped(context, r.rundownId, r.partInstanceId, r.time)
+		ServerPlayoutAPI.onPartPlaybackStopped(context, r.rundownPlaylistId, r.partInstanceId, r.time)
 	}
 	export function piecePlaybackStarted(
 		context: MethodContext,
@@ -280,13 +392,13 @@ export namespace ServerPeripheralDeviceAPI {
 		const peripheralDevice = checkAccessAndGetPeripheralDevice(deviceId, token, context)
 
 		check(r.time, Number)
-		check(r.rundownId, String)
+		check(r.rundownPlaylistId, String)
 		check(r.pieceInstanceId, String)
 		check(r.dynamicallyInserted, Match.Optional(Boolean))
 
 		ServerPlayoutAPI.onPiecePlaybackStarted(
 			context,
-			r.rundownId,
+			r.rundownPlaylistId,
 			r.pieceInstanceId,
 			!!r.dynamicallyInserted,
 			r.time
@@ -302,13 +414,13 @@ export namespace ServerPeripheralDeviceAPI {
 		const peripheralDevice = checkAccessAndGetPeripheralDevice(deviceId, token, context)
 
 		check(r.time, Number)
-		check(r.rundownId, String)
+		check(r.rundownPlaylistId, String)
 		check(r.pieceInstanceId, String)
 		check(r.dynamicallyInserted, Match.Optional(Boolean))
 
 		ServerPlayoutAPI.onPiecePlaybackStopped(
 			context,
-			r.rundownId,
+			r.rundownPlaylistId,
 			r.pieceInstanceId,
 			!!r.dynamicallyInserted,
 			r.time
@@ -437,58 +549,141 @@ export namespace ServerPeripheralDeviceAPI {
 		})
 		// TODO: add others here (MediaWorkflows, etc?)
 	}
+	export function reportResolveDone(
+		context: MethodContext,
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		timelineHash: TimelineHash,
+		/** Resolve duration, as reported by playout-gateway/TSR */
+		resolveDuration: number
+	) {
+		// Device (playout gateway) reports that it has finished resolving a timeline
+		const peripheralDevice = checkAccessAndGetPeripheralDevice(deviceId, deviceToken, context)
+
+		check(timelineHash, String)
+		check(resolveDuration, Number)
+
+		if (peripheralDevice.studioId) {
+			const timeline = Timeline.findOne(
+				{
+					_id: peripheralDevice.studioId,
+				},
+				{
+					fields: {
+						timelineHash: 1,
+						generated: 1,
+					},
+				}
+			) as Pick<TimelineComplete, 'timelineHash' | 'generated'>
+
+			// Compare the timelineHash with the one we have in the timeline.
+			// We're using that to determine when the timeline was generated (in Core)
+			// In order to determine the total latency (roundtrip from timeline-generation => resolving done in playout-gateway)
+			if (timeline) {
+				if (timeline.timelineHash === timelineHash) {
+					/** Time when timeline was generated in Core */
+					const startTime = timeline.generated
+					const endTime = getCurrentTime()
+
+					const totalLatency = endTime - startTime
+
+					/** How many latencies we store for statistics */
+					const LATENCIES_MAX_LENGTH = 100
+
+					/** Any latency higher than this is not realistic */
+					const MAX_REALISTIC_LATENCY = 1000 // ms
+
+					if (totalLatency < MAX_REALISTIC_LATENCY) {
+						if (!peripheralDevice.latencies) peripheralDevice.latencies = []
+						peripheralDevice.latencies.unshift(totalLatency)
+
+						if (peripheralDevice.latencies.length > LATENCIES_MAX_LENGTH) {
+							// Trim anything after LATENCIES_MAX_LENGTH
+							peripheralDevice.latencies.splice(LATENCIES_MAX_LENGTH, 999)
+						}
+						PeripheralDevices.update(peripheralDevice._id, {
+							$set: {
+								latencies: peripheralDevice.latencies,
+							},
+						})
+						// Because the ActivationCache is used during playout, we need to update that as well:
+						const activationCache = getValidActivationCache(peripheralDevice.studioId)
+						if (activationCache) {
+							const device = waitForPromise(activationCache.getPeripheralDevices()).find(
+								(device) => device._id === peripheralDevice._id
+							)
+							if (device) {
+								device.latencies = peripheralDevice.latencies
+							}
+						}
+
+						// Also store the result to userActions, if possible.
+						UserActionsLog.update(
+							{
+								success: true,
+								doneTime: { $gt: startTime },
+							},
+							{
+								$push: {
+									gatewayDuration: totalLatency,
+									timelineResolveDuration: resolveDuration,
+								},
+							},
+							{ multi: false }
+						)
+					}
+				}
+			}
+		}
+	}
 }
 
-PickerPOST.route(
-	'/devices/:deviceId/:token/uploadCredentials',
-	(params, req: IncomingMessage, res: ServerResponse, next) => {
-		res.setHeader('Content-Type', 'text/plain')
+PickerPOST.route('/devices/:deviceId/uploadCredentials', (params, req: IncomingMessage, res: ServerResponse, next) => {
+	res.setHeader('Content-Type', 'text/plain')
 
-		let content = ''
-		try {
-			let deviceId: PeripheralDeviceId = protectString(decodeURIComponent(params.deviceId))
-			let token: string = decodeURIComponent(params.token) // TODO: verify that this works
+	let content = ''
+	try {
+		let deviceId: PeripheralDeviceId = protectString(decodeURIComponent(params.deviceId))
+		check(deviceId, String)
 
-			if (!deviceId) throw new Meteor.Error(400, `parameter deviceId is missing`)
-			if (!token) throw new Meteor.Error(400, `parameter token is missing`)
+		if (!deviceId) throw new Meteor.Error(400, `parameter deviceId is missing`)
 
-			const peripheralDevice = checkAccessAndGetPeripheralDevice(deviceId, token, { userId: null })
+		const peripheralDevice = PeripheralDevices.findOne(deviceId)
+		if (!peripheralDevice) throw new Meteor.Error(404, `Peripheral device "${deviceId}" not found`)
 
-			let url = parseUrl(req.url || '', true)
+		let url = parseUrl(req.url || '', true)
 
-			let fileNames = url.query['name'] || undefined
-			let fileName: string = (_.isArray(fileNames) ? fileNames[0] : fileNames) || ''
+		let fileNames = url.query['name'] || undefined
+		let fileName: string = (_.isArray(fileNames) ? fileNames[0] : fileNames) || ''
 
-			check(deviceId, String)
-			check(fileName, String)
+		check(fileName, String)
 
-			const body = (req as any).body
-			if (!body) throw new Meteor.Error(400, 'Upload credentials: Missing request body')
+		const body = (req as any).body
+		if (!body) throw new Meteor.Error(400, 'Upload credentials: Missing request body')
 
-			if (typeof body !== 'string' || body.length < 10)
-				throw new Meteor.Error(400, 'Upload credentials: Invalid request body')
+		if (typeof body !== 'string' || body.length < 10)
+			throw new Meteor.Error(400, 'Upload credentials: Invalid request body')
 
-			logger.info('Upload credentails, ' + body.length + ' bytes')
+		logger.info('Upload credentails, ' + body.length + ' bytes')
 
-			const credentials = JSON.parse(body)
+		const credentials = JSON.parse(body)
 
-			PeripheralDevices.update(peripheralDevice._id, {
-				$set: {
-					'secretSettings.credentials': credentials,
-					'settings.secretCredentials': true,
-				},
-			})
+		PeripheralDevices.update(peripheralDevice._id, {
+			$set: {
+				'secretSettings.credentials': credentials,
+				'settings.secretCredentials': true,
+			},
+		})
 
-			res.statusCode = 200
-		} catch (e) {
-			res.statusCode = 500
-			content = e + ''
-			logger.error('Upload credentials failed: ' + e)
-		}
-
-		res.end(content)
+		res.statusCode = 200
+	} catch (e) {
+		res.statusCode = 500
+		content = e + ''
+		logger.error('Upload credentials failed: ' + e)
 	}
-)
+
+	res.end(content)
+})
 
 /** WHen a device has executed a PeripheralDeviceCommand, it will reply to this endpoint with the result */
 function functionReply(
@@ -499,13 +694,13 @@ function functionReply(
 	err: any,
 	result: any
 ): void {
-	checkAccessAndGetPeripheralDevice(deviceId, deviceToken, context)
+	const device = checkAccessAndGetPeripheralDevice(deviceId, deviceToken, context)
 
 	// logger.debug('functionReply', err, result)
 	PeripheralDeviceCommands.update(
 		{
 			_id: commandId,
-			deviceId: deviceId,
+			deviceId: { $in: _.compact([device._id, device.parentDeviceId]) },
 		},
 		{
 			$set: {
@@ -535,6 +730,15 @@ class ServerPeripheralDeviceAPIClass extends MethodContextAPI implements NewPeri
 	}
 
 	// ----- PeripheralDevice --------------
+	functionReply(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		commandId: PeripheralDeviceCommandId,
+		err: any,
+		result: any
+	) {
+		return makePromise(() => functionReply(this, deviceId, deviceToken, commandId, err, result))
+	}
 	initialize(deviceId: PeripheralDeviceId, deviceToken: string, options: PeripheralDeviceAPI.InitOptions) {
 		return makePromise(() => ServerPeripheralDeviceAPI.initialize(this, deviceId, deviceToken, options))
 	}
@@ -549,6 +753,29 @@ class ServerPeripheralDeviceAPIClass extends MethodContextAPI implements NewPeri
 	}
 	getPeripheralDevice(deviceId: PeripheralDeviceId, deviceToken: string) {
 		return makePromise(() => ServerPeripheralDeviceAPI.getPeripheralDevice(this, deviceId, deviceToken))
+	}
+	pingWithCommand(deviceId: PeripheralDeviceId, deviceToken: string, message: string, cb?: Function) {
+		return makePromise(() => ServerPeripheralDeviceAPI.pingWithCommand(this, deviceId, deviceToken, message, cb))
+	}
+	killProcess(deviceId: PeripheralDeviceId, deviceToken: string, really: boolean) {
+		return makePromise(() => ServerPeripheralDeviceAPI.killProcess(this, deviceId, deviceToken, really))
+	}
+	testMethod(deviceId: PeripheralDeviceId, deviceToken: string, returnValue: string, throwError?: boolean) {
+		return makePromise(() =>
+			ServerPeripheralDeviceAPI.testMethod(this, deviceId, deviceToken, returnValue, throwError)
+		)
+	}
+	removePeripheralDevice(deviceId: PeripheralDeviceId, token?: string) {
+		return makePromise(() => ServerPeripheralDeviceAPI.removePeripheralDevice(this, deviceId, token))
+	}
+
+	// ------ Playout Gateway --------
+	timelineTriggerTime(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		r: PeripheralDeviceAPI.TimelineTriggerTimeResult
+	) {
+		return makePromise(() => ServerPeripheralDeviceAPI.timelineTriggerTime(this, deviceId, deviceToken, r))
 	}
 	partPlaybackStarted(
 		deviceId: PeripheralDeviceId,
@@ -578,35 +805,15 @@ class ServerPeripheralDeviceAPIClass extends MethodContextAPI implements NewPeri
 	) {
 		return makePromise(() => ServerPeripheralDeviceAPI.piecePlaybackStarted(this, deviceId, deviceToken, r))
 	}
-	pingWithCommand(deviceId: PeripheralDeviceId, deviceToken: string, message: string, cb?: Function) {
-		return makePromise(() => ServerPeripheralDeviceAPI.pingWithCommand(this, deviceId, deviceToken, message, cb))
-	}
-	killProcess(deviceId: PeripheralDeviceId, deviceToken: string, really: boolean) {
-		return makePromise(() => ServerPeripheralDeviceAPI.killProcess(this, deviceId, deviceToken, really))
-	}
-	testMethod(deviceId: PeripheralDeviceId, deviceToken: string, returnValue: string, throwError?: boolean) {
+	reportResolveDone(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		timelineHash: TimelineHash,
+		resolveDuration: number
+	) {
 		return makePromise(() =>
-			ServerPeripheralDeviceAPI.testMethod(this, deviceId, deviceToken, returnValue, throwError)
+			ServerPeripheralDeviceAPI.reportResolveDone(this, deviceId, deviceToken, timelineHash, resolveDuration)
 		)
-	}
-	timelineTriggerTime(
-		deviceId: PeripheralDeviceId,
-		deviceToken: string,
-		r: PeripheralDeviceAPI.TimelineTriggerTimeResult
-	) {
-		return makePromise(() => ServerPeripheralDeviceAPI.timelineTriggerTime(this, deviceId, deviceToken, r))
-	}
-	removePeripheralDevice(deviceId: PeripheralDeviceId, token?: string) {
-		return makePromise(() => ServerPeripheralDeviceAPI.removePeripheralDevice(this, deviceId, token))
-	}
-	functionReply(
-		deviceId: PeripheralDeviceId,
-		deviceToken: string,
-		commandId: PeripheralDeviceCommandId,
-		err: any,
-		result: any
-	) {
-		return makePromise(() => functionReply(this, deviceId, deviceToken, commandId, err, result))
 	}
 
 	// ------ Spreadsheet Gateway --------
@@ -632,6 +839,16 @@ class ServerPeripheralDeviceAPIClass extends MethodContextAPI implements NewPeri
 	}
 	dataRundownUpdate(deviceId: PeripheralDeviceId, deviceToken: string, ingestRundown: IngestRundown) {
 		return makePromise(() => RundownInput.dataRundownUpdate(this, deviceId, deviceToken, ingestRundown))
+	}
+	dataSegmentGet(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		rundownExternalId: string,
+		segmentExternalId: string
+	) {
+		return makePromise(() =>
+			RundownInput.dataSegmentGet(this, deviceId, deviceToken, rundownExternalId, segmentExternalId)
+		)
 	}
 	dataSegmentDelete(
 		deviceId: PeripheralDeviceId,
@@ -662,6 +879,16 @@ class ServerPeripheralDeviceAPIClass extends MethodContextAPI implements NewPeri
 		return makePromise(() =>
 			RundownInput.dataSegmentUpdate(this, deviceId, deviceToken, rundownExternalId, ingestSegment)
 		)
+	}
+	dataSegmentRanksUpdate(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		rundownExternalId: string,
+		newRanks: { [segmentExternalId: string]: number }
+	) {
+		return makePromise(() => {
+			RundownInput.dataSegmentRanksUpdate(this, deviceId, deviceToken, rundownExternalId, newRanks)
+		})
 	}
 	dataPartDelete(
 		deviceId: PeripheralDeviceId,
@@ -836,6 +1063,11 @@ class ServerPeripheralDeviceAPIClass extends MethodContextAPI implements NewPeri
 			MediaScannerIntegration.updateMediaObject(this, deviceId, deviceToken, collectionId, id, doc)
 		)
 	}
+	clearMediaObjectCollection(deviceId: PeripheralDeviceId, deviceToken: string, collectionId: string) {
+		return makePromise(() =>
+			MediaScannerIntegration.clearMediaObjectCollection(deviceId, deviceToken, collectionId)
+		)
+	}
 	// ------- Media Manager --------------
 	getMediaWorkFlowRevisions(deviceId: PeripheralDeviceId, deviceToken: string) {
 		return makePromise(() => MediaManagerIntegration.getMediaWorkFlowRevisions(this, deviceId, deviceToken))
@@ -861,6 +1093,107 @@ class ServerPeripheralDeviceAPIClass extends MethodContextAPI implements NewPeri
 	) {
 		return makePromise(() =>
 			MediaManagerIntegration.updateMediaWorkFlowStep(this, deviceId, deviceToken, docId, obj)
+		)
+	}
+	insertExpectedPackageWorkStatus(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		workStatusId: ExpectedPackageWorkStatusId,
+		workStatus: ExpectedPackageStatusAPI.WorkStatus
+	) {
+		return makePromise(() =>
+			PackageManagerIntegration.insertExpectedPackageWorkStatus(
+				this,
+				deviceId,
+				deviceToken,
+				workStatusId,
+				workStatus
+			)
+		)
+	}
+	updateExpectedPackageWorkStatus(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		workStatusId: ExpectedPackageWorkStatusId,
+		workStatus: Partial<ExpectedPackageStatusAPI.WorkStatus>
+	) {
+		return makePromise(() =>
+			PackageManagerIntegration.updateExpectedPackageWorkStatus(
+				this,
+				deviceId,
+				deviceToken,
+				workStatusId,
+				workStatus
+			)
+		)
+	}
+	removeExpectedPackageWorkStatus(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		workStatusId: ExpectedPackageWorkStatusId
+	) {
+		return makePromise(() =>
+			PackageManagerIntegration.removeExpectedPackageWorkStatus(this, deviceId, deviceToken, workStatusId)
+		)
+	}
+	removeAllExpectedPackageWorkStatusOfDevice(deviceId: PeripheralDeviceId, deviceToken: string) {
+		return makePromise(() =>
+			PackageManagerIntegration.removeAllExpectedPackageWorkStatusOfDevice(this, deviceId, deviceToken)
+		)
+	}
+	updatePackageContainerPackageStatus(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		containerId: string,
+		packageId: string,
+		packageStatus: ExpectedPackageStatusAPI.PackageContainerPackageStatus | null
+	) {
+		return makePromise(() =>
+			PackageManagerIntegration.updatePackageContainerPackageStatus(
+				this,
+				deviceId,
+				deviceToken,
+				containerId,
+				packageId,
+				packageStatus
+			)
+		)
+	}
+	fetchPackageInfoMetadata(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		type: string,
+		packageIds: ExpectedPackageId[]
+	) {
+		return makePromise(() =>
+			PackageManagerIntegration.fetchPackageInfoMetadata(this, deviceId, deviceToken, type, packageIds)
+		)
+	}
+	updatePackageInfo(
+		deviceId: PeripheralDeviceId,
+		deviceToken: string,
+		type: PackageInfoDBType, // string
+		packageId: ExpectedPackageId,
+		expectedContentVersionHash: string,
+		actualContentVersionHash: string,
+		payload: any
+	) {
+		return makePromise(() =>
+			PackageManagerIntegration.updatePackageInfo(
+				this,
+				deviceId,
+				deviceToken,
+				type,
+				packageId,
+				expectedContentVersionHash,
+				actualContentVersionHash,
+				payload
+			)
+		)
+	}
+	removePackageInfo(deviceId: PeripheralDeviceId, deviceToken: string, type: string, packageId: ExpectedPackageId) {
+		return makePromise(() =>
+			PackageManagerIntegration.removePackageInfo(this, deviceId, deviceToken, type, packageId)
 		)
 	}
 }

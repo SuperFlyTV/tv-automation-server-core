@@ -6,7 +6,7 @@ import { PeripheralDevice } from '../../../../lib/collections/PeripheralDevices'
 import { testInFiber } from '../../../../__mocks__/helpers/jest'
 import { Segments } from '../../../../lib/collections/Segments'
 import { Parts } from '../../../../lib/collections/Parts'
-import { IngestRundown } from 'tv-automation-sofie-blueprints-integration'
+import { IngestRundown } from '@sofie-automation/blueprints-integration'
 import { RundownPlaylists, RundownPlaylist } from '../../../../lib/collections/RundownPlaylists'
 
 require('../../peripheralDevice.ts') // include in order to create the Meteor methods needed
@@ -54,14 +54,8 @@ describe('Test ingest actions for rundowns and segments', () => {
 		const playlist = RundownPlaylists.findOne() as RundownPlaylist
 		expect(playlist).toMatchObject({
 			externalId: rundown._id,
+			_id: rundown.playlistId,
 		})
-
-		// // Set to unsynced to ensure that flag gets ignored by the debug method
-		// Rundowns.update(rundown._id, {
-		// 	$set: {
-		// 		unsynced: true
-		// 	}
-		// })
 
 		// Remove the parts to make it explicit that the blueprints rerun properly
 		Segments.remove({ rundownId: rundown._id })

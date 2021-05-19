@@ -3,14 +3,24 @@ import ClassNames from 'classnames'
 import { ShowStyleBase } from '../../../../../lib/collections/ShowStyleBases'
 import { PieceUi } from '../../../SegmentTimeline/SegmentTimelineContainer'
 import { AdLibPieceUi } from '../../AdLibPanel'
+import { BucketAdLibUi, BucketAdLibActionUi } from '../../RundownViewBuckets'
 import { RundownUtils } from '../../../../lib/rundown'
 import { RundownAPI } from '../../../../../lib/api/rundown'
 import { Piece } from '../../../../../lib/collections/Pieces'
+import { Studio } from '../../../../../lib/collections/Studios'
+import { withMediaObjectStatus } from '../../../SegmentTimeline/withMediaObjectStatus'
+import { IAdLibListItem } from '../../AdLibListItem'
 
-export default function InspectorTitle(props: { piece: PieceUi | AdLibPieceUi; showStyleBase: ShowStyleBase }) {
-	const piece = RundownUtils.isAdLibPiece(props.piece)
-		? (props.piece as AdLibPieceUi)
-		: (props.piece.instance.piece as Piece)
+interface IProps {
+	piece: PieceUi | IAdLibListItem | BucketAdLibUi | BucketAdLibActionUi
+	showStyleBase: ShowStyleBase
+	studio: Studio
+}
+
+const InspectorTitle = withMediaObjectStatus<IProps, {}>()(function InspectorTitle(props: IProps) {
+	const piece = RundownUtils.isPieceInstance(props.piece)
+		? (props.piece.instance.piece as Piece)
+		: (props.piece as AdLibPieceUi)
 
 	const layer = props.showStyleBase.sourceLayers.find((layer) => layer._id === piece.sourceLayerId)
 
@@ -25,10 +35,13 @@ export default function InspectorTitle(props: { piece: PieceUi | AdLibPieceUi; s
 						'source-broken': piece.status === RundownAPI.PieceStatusCode.SOURCE_BROKEN,
 						'unknown-state': piece.status === RundownAPI.PieceStatusCode.UNKNOWN,
 					}
-				)}>
+				)}
+			>
 				{layer && (layer.abbreviation || layer.name)}
 			</div>
 			<span className="shelf-inspector__title__label">{piece.name}</span>
 		</h2>
 	)
-}
+})
+
+export default InspectorTitle

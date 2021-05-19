@@ -15,12 +15,8 @@ export interface ISettings {
 	 * Default: 25
 	 */
 	frameRate: number
-	/** Should the Rundown view User Interface default all segments to "collapsed" state? Default: false */
-	defaultToCollapsedSegments: boolean
 	/* Should the segment in the Rundown view automatically rewind after it stops being live? Default: false */
 	autoRewindLeavingSegment: boolean
-	/** Should the Current and Next segments be automatically made expanded (uncollapsed)? Default: false */
-	autoExpandCurrentNextSegment: boolean
 	/** Disable blur border in RundownView */
 	disableBlurBorder: boolean
 	/** Default time scale zooming for the UI. Default: 1  */
@@ -29,12 +25,16 @@ export interface ISettings {
 	allowGrabbingTimeline: boolean
 	/** If true, enables security measures, access control and user accounts. */
 	enableUserAccounts: boolean
-	/** Allow Segments to become unsynced, rather than the entire rundown */
-	allowUnsyncedSegments: boolean
+	/** Preserve unsynced segment contents when the playing segment is removed, rather than removing all but the playing part */
+	preserveUnsyncedPlayingSegmentContents: boolean
 	/** Allow resets while a rundown is on-air */
 	allowRundownResetOnAir: boolean
 	/** Default duration to use to render parts when no duration is provided */
 	defaultDisplayDuration: number
+	/** If true, allows creation of new playlists in the Lobby Gui (rundown list). If false; only pre-existing playlists are allowed. */
+	allowMultiplePlaylistsInGUI: boolean
+	/** How many segments of history to show when scrolling back in time (0 = show current segment only) */
+	followOnAirSegmentsHistory: number
 	/** If true, displays the evaluation form after at the end of a show */
 	enableAfterBroadcastForm: boolean
 }
@@ -46,16 +46,16 @@ export let Settings: ISettings
  */
 const DEFAULT_SETTINGS: ISettings = {
 	frameRate: 25,
-	defaultToCollapsedSegments: false,
-	autoExpandCurrentNextSegment: false,
-	autoRewindLeavingSegment: false,
+	autoRewindLeavingSegment: true,
 	disableBlurBorder: false,
 	defaultTimeScale: 1,
 	allowGrabbingTimeline: true,
 	enableUserAccounts: false,
-	allowUnsyncedSegments: false,
+	preserveUnsyncedPlayingSegmentContents: false,
 	allowRundownResetOnAir: false,
 	defaultDisplayDuration: 3000,
+	allowMultiplePlaylistsInGUI: false,
+	followOnAirSegmentsHistory: 0,
 	enableAfterBroadcastForm: true,
 }
 
@@ -68,4 +68,10 @@ Settings = { ..._.clone(DEFAULT_SETTINGS), ..._.clone(SUPERFLY_DEFAULT) }
 
 Meteor.startup(() => {
 	Settings = _.extend(Settings, Meteor.settings.public)
+
+	// Translate old Settings names which solve a similar problem but with a different approach
+	const settingsOld = Settings
+	if ('allowUnsyncedSegments' in settingsOld && settingsOld['preserveUnsyncedPlayingSegmentContents']) {
+		Settings.preserveUnsyncedPlayingSegmentContents = settingsOld['preserveUnsyncedPlayingSegmentContents']
+	}
 })

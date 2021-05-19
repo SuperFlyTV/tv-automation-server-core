@@ -1,10 +1,9 @@
 import { TransformedCollection } from '../typings/meteor'
 import { registerCollection, Time, ProtectedString } from '../lib'
-import { Meteor } from 'meteor/meteor'
 import { createMongoCollection } from './lib'
 import { StudioId } from './Studios'
 import { PeripheralDeviceId } from './PeripheralDevices'
-import { MediaManagerAPI } from '../api/mediaManager'
+import { registerIndex } from '../database'
 
 /** A string, identifying a MediaWorkFlow */
 export type MediaWorkFlowId = ProtectedString<'MediaWorkFlowId'>
@@ -37,16 +36,12 @@ export const MediaWorkFlows: TransformedCollection<MediaWorkFlow, MediaWorkFlow>
 	'mediaWorkFlows'
 )
 registerCollection('MediaWorkFlows', MediaWorkFlows)
-Meteor.startup(() => {
-	if (Meteor.isServer) {
-		MediaWorkFlows._ensureIndex({
-			// TODO: add deviceId: 1,
-			mediaObjectId: 1,
-		})
-		MediaWorkFlows._ensureIndex({
-			finished: 1,
-			success: 1,
-			priority: 1,
-		})
-	}
+registerIndex(MediaWorkFlows, {
+	// TODO: add deviceId: 1,
+	mediaObjectId: 1,
+})
+registerIndex(MediaWorkFlows, {
+	finished: 1,
+	success: 1,
+	priority: 1,
 })

@@ -3,16 +3,13 @@ import * as _ from 'underscore'
 
 import { withTracker } from '../../lib/ReactMeteorData/react-meteor-data'
 import ClassNames from 'classnames'
-import { Rundown, Rundowns } from '../../../lib/collections/Rundowns'
-import { getCurrentTime, extendMandadory, normalizeArray, literal, unprotectString } from '../../../lib/lib'
+import { getCurrentTime, literal, unprotectString } from '../../../lib/lib'
 import { PartUi } from '../SegmentTimeline/SegmentTimelineContainer'
-import { Segment, DBSegment, SegmentId } from '../../../lib/collections/Segments'
-import { withTiming, WithTiming } from './RundownTiming'
+import { DBSegment, SegmentId } from '../../../lib/collections/Segments'
+import { withTiming, WithTiming } from './RundownTiming/withTiming'
 import { ErrorBoundary } from '../../lib/ErrorBoundary'
 import { MeteorReactComponent } from '../../lib/MeteorReactComponent'
 import { RundownUtils } from '../../lib/rundown'
-import { PartExtended } from '../../../lib/Rundown'
-import { Part } from '../../../lib/collections/Parts'
 import { RundownPlaylists, RundownPlaylist, RundownPlaylistId } from '../../../lib/collections/RundownPlaylists'
 import { findPartInstanceOrWrapToTemporary, PartInstance } from '../../../lib/collections/PartInstances'
 
@@ -78,16 +75,11 @@ export const RundownOverview = withTracker<RundownOverviewProps, RundownOverview
 							title: 1,
 							rundownId: 1,
 							segmentId: 1,
-							duration: 1,
 							expectedDuration: 1,
-							timings: 1,
-							startedPlayback: 1,
-							stoppedPlayback: 1,
-							taken: 1,
 						},
 					}
 				)
-				.map((part) => {
+				.forEach((part) => {
 					const instance = findPartInstanceOrWrapToTemporary(partInstancesMap, part)
 					const partUi = literal<PartUi>({
 						partId: part._id,
@@ -135,34 +127,34 @@ export const RundownOverview = withTracker<RundownOverviewProps, RundownOverview
 							next: isNext,
 
 							'has-played':
-								innerPart.startedPlayback &&
-								(innerPart.getLastStartedPlayback() || 0) > 0 &&
-								(innerPart.duration || 0) > 0,
+								(part.instance.timings?.startedPlayback || 0) > 0 && (part.instance.timings?.duration || 0) > 0,
 						})}
 						style={{
 							width:
 								(Math.max(
 									(timingDurations && timingDurations[unprotectString(innerPart._id)]) || 0,
-									innerPart.duration || innerPart.expectedDuration || 0
+									part.instance.timings?.duration || innerPart.expectedDuration || 0
 								) /
 									(segmentDuration || 0)) *
 									100 +
 								'%',
-						}}>
+						}}
+					>
 						{isNext && <div className="rundown__overview__segment__part__next-line"></div>}
 						{isLive && (
 							<div
 								className="rundown__overview__segment__part__live-line"
 								style={{
 									left:
-										((getCurrentTime() - (innerPart.getLastStartedPlayback() || 0)) /
+										((getCurrentTime() - (part.instance.timings?.startedPlayback || 0)) /
 											Math.max(
 												(timingDurations && timingDurations[unprotectString(innerPart._id)]) || 0,
-												innerPart.duration || innerPart.expectedDuration || 0
+												part.instance.timings?.duration || innerPart.expectedDuration || 0
 											)) *
 											100 +
 										'%',
-								}}></div>
+								}}
+							></div>
 						)}
 					</div>
 				)
@@ -185,7 +177,8 @@ export const RundownOverview = withTracker<RundownOverviewProps, RundownOverview
 							})}
 							style={{
 								width: ((segmentDuration || 0) / totalDuration) * 100 + '%',
-							}}>
+							}}
+						>
 							{segment.items.map((item) => {
 								return this.renderPart(
 									item,
@@ -201,7 +194,8 @@ export const RundownOverview = withTracker<RundownOverviewProps, RundownOverview
 									className="rundown__overview__segment__part__label"
 									style={{
 										maxWidth: '100%',
-									}}>
+									}}
+								>
 									{segment.name}
 									{segmentDuration && _.isNumber(segmentDuration) && (
 										<span className="rundown__overview__segment__part__label__duration">

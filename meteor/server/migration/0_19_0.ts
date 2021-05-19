@@ -1,7 +1,7 @@
 import { addMigrationSteps } from './databaseMigration'
 import { logger } from '../logging'
 import { Studios } from '../../lib/collections/Studios'
-import { ensureCollectionProperty, setExpectedVersion } from './lib'
+import { ensureCollectionProperty, ensureCollectionPropertyManual, setExpectedVersion } from './lib'
 import { ShowStyleBases } from '../../lib/collections/ShowStyleBases'
 import { ShowStyleVariants, ShowStyleVariantId } from '../../lib/collections/ShowStyleVariants'
 import { ShowStyles } from './deprecatedDataTypes/0_18_0'
@@ -12,6 +12,7 @@ import { PeripheralDevices } from '../../lib/collections/PeripheralDevices'
 import { Random } from 'meteor/random'
 import { PeripheralDeviceAPI } from '../../lib/api/peripheralDevice'
 import { getRandomId, protectString } from '../../lib/lib'
+import { Studio as Studio_1_10_0 } from './deprecatedDataTypes/1_10_0'
 
 /**
  * This file contains system specific migration steps.
@@ -19,7 +20,7 @@ import { getRandomId, protectString } from '../../lib/lib'
  */
 
 // 0.19.0 (Release 4) is a BIG refactoring
-addMigrationSteps('0.19.0', [
+export const addSteps = addMigrationSteps('0.19.0', [
 	{
 		// Create showStyleBase (migrate from studio)
 		id: 'showStyleBase exists',
@@ -50,7 +51,7 @@ addMigrationSteps('0.19.0', [
 					sourceLayers: studio.sourceLayers,
 					// @ts-ignore
 					hotkeyLegend: studio.hotkeyLegend,
-					config: [],
+					blueprintConfig: {},
 					_rundownVersionHash: '',
 				})
 
@@ -59,7 +60,7 @@ addMigrationSteps('0.19.0', [
 					_id: variantId,
 					name: 'Default variant',
 					showStyleBaseId: id,
-					config: [],
+					blueprintConfig: {},
 					_rundownVersionHash: '',
 				})
 
@@ -80,7 +81,7 @@ addMigrationSteps('0.19.0', [
 					blueprintId: protectString(''),
 					outputLayers: [],
 					sourceLayers: [],
-					config: [],
+					blueprintConfig: {},
 					_rundownVersionHash: '',
 				})
 
@@ -88,7 +89,7 @@ addMigrationSteps('0.19.0', [
 					_id: getRandomId(),
 					name: 'Default variant',
 					showStyleBaseId: protectString('show0'),
-					config: [],
+					blueprintConfig: {},
 					_rundownVersionHash: '',
 				})
 			}
@@ -96,10 +97,8 @@ addMigrationSteps('0.19.0', [
 	},
 	ensureCollectionProperty('ShowStyleBases', {}, 'outputLayers', []),
 	ensureCollectionProperty('ShowStyleBases', {}, 'sourceLayers', []),
-	ensureCollectionProperty('ShowStyleBases', {}, 'config', []),
-	ensureCollectionProperty('ShowStyleBases', {}, 'runtimeArguments', []),
 	{
-		id: 'Move rundownArguments from Studio into ShowStyleBase',
+		id: 'Remove runtimeArguments from Studio',
 		canBeRunAutomatically: true,
 		validate: () => {
 			const studio = Studios.find().fetch()
@@ -112,52 +111,16 @@ addMigrationSteps('0.19.0', [
 			return result
 		},
 		migrate: () => {
-			const studio = Studios.find().fetch()
-			let result: string | undefined = undefined
-			studio.forEach((siItem) => {
-				if ((siItem as any).runtimeArguments) {
-					if ((siItem as any).runtimeArguments.length > 0) {
-						const showStyles = ShowStyleBases.find({ _id: { $in: siItem.supportedShowStyleBase } }).fetch()
-						showStyles.forEach((ssb) => {
-							ssb.runtimeArguments = ssb.runtimeArguments || [] // HAHA: typeScript fails on this, thinking its a function call without the semicolon
-							;(siItem as any).runtimeArguments.forEach((item) => {
-								// const bItem: IBlueprintRuntimeArgumentsItem = item
-								const exisitng = ssb.runtimeArguments.find((ssbItem) => {
-									return (
-										ssbItem.hotkeys === item.hotkeys &&
-										ssbItem.label === item.label &&
-										ssbItem.property === item.property &&
-										ssbItem.value === item.value
-									)
-								})
-								if (!exisitng) {
-									ssb.runtimeArguments.push(item)
-								}
-							})
-
-							ShowStyleBases.update(ssb._id, {
-								$set: {
-									runtimeArguments: ssb.runtimeArguments,
-								},
-							})
-						})
-					}
-
-					// No result set means no errors and the runtimeArguments can be removed from studio
-
-					if (!result) {
-						Studios.update(siItem._id, {
-							$unset: {
-								runtimeArguments: 1,
-							},
-						})
-					}
+			Studios.update(
+				{},
+				{
+					$unset: {
+						runtimeArguments: 1,
+					},
 				}
-			})
-			return result
+			)
 		},
 	},
-	ensureCollectionProperty('ShowStyleVariants', {}, 'config', []),
 
 	{
 		// Ensure rundowns have showStyleBaseId and showStyleVariandId set
@@ -218,7 +181,8 @@ addMigrationSteps('0.19.0', [
 		dependOnResultFrom: 'studio exists',
 		validate: () => {
 			let validate: boolean | string = false
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.mediaPreviewsUrl) {
 					if (_.find(studio.config, (c) => c._id === 'media_previews_url')) {
 						validate = `mediaPreviewsUrl not set on studio ${studio._id}`
@@ -228,7 +192,8 @@ addMigrationSteps('0.19.0', [
 			return validate
 		},
 		migrate: () => {
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.mediaPreviewsUrl) {
 					const value = _.find(studio.config, (c) => c._id === 'media_previews_url')
 					if (value) {
@@ -255,7 +220,8 @@ addMigrationSteps('0.19.0', [
 		dependOnResultFrom: 'studio exists',
 		validate: () => {
 			let validate: boolean | string = false
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.sofieUrl) {
 					if (_.find(studio.config, (c) => c._id === 'sofie_url')) {
 						validate = `sofieUrl not set on studio ${studio._id}`
@@ -265,7 +231,8 @@ addMigrationSteps('0.19.0', [
 			return validate
 		},
 		migrate: () => {
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.sofieUrl) {
 					const value = _.find(studio.config, (c) => c._id === 'sofie_url')
 					if (value) {
@@ -286,22 +253,20 @@ addMigrationSteps('0.19.0', [
 		},
 	},
 	ensureCollectionProperty('Studios', {}, 'supportedShowStyleBase', []),
-	ensureCollectionProperty(
+	ensureCollectionPropertyManual(
 		'Studios',
 		{},
 		'settings.mediaPreviewsUrl',
-		null,
 		'text',
 		'Media previews URL',
 		'Enter the URL to the media previews provider, example: http://10.0.1.100:8000/',
 		undefined,
 		'studio.settings.mediaPreviewsUrl from config'
 	),
-	ensureCollectionProperty(
+	ensureCollectionPropertyManual(
 		'Studios',
 		{},
 		'settings.sofieUrl',
-		null,
 		'text',
 		'Sofie URL',
 		"Enter the URL to the Sofie Core (that's what's in your browser URL,), example: https://slsofie without trailing /, short form server name is OK.",

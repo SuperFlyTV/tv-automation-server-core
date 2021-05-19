@@ -24,9 +24,10 @@ $segment-item-disabled-color: #c9c9c9;
 $segment-nextline-shade-width: 1.875rem;
 $segment-nextline-shade-fill: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.5));
 
-$rundown-divider-background-color: rgba(0, 0, 0, 0.2);
+$rundown-divider-color: #000000;
+$rundown-divider-background-color: #dddddd;
 
-$liveline-timecode-color: #ffff00; //$general-live-color;
+$liveline-timecode-color: $general-countdown-to-next-color; //$general-live-color;
 $hold-status-color: $liveline-timecode-color;
 
 $previewline-color: rgb(38, 137, 186);
@@ -34,7 +35,8 @@ $previewline-color: rgb(38, 137, 186);
 /** The top padding of the timeline has to be equal to the header-height, so that the
 	functional part of the timeline starts at the same level as the segment title
 */
-$segment-timeline-padding: $segment-header-height 0 2.5em;
+$segment-timeline-padding: $segment-header-height 0 1.5em;
+$segment-border-radius: 11px;
 
 $segment-layer-height: 1.5em;
 $segment-layer-separator-color: transparentize(#000, 0.5);
@@ -74,6 +76,8 @@ $segment-layer-separator-color: transparentize(#000, 0.5);
 	);
 	background-repeat: repeat-y;
 	background-size: 800px 1px;
+	border-radius: $segment-border-radius;
+	overflow: hidden;
 
 	animation-duration: 1s;
 	animation-fill-mode: forwards;
@@ -105,10 +109,29 @@ $segment-layer-separator-color: transparentize(#000, 0.5);
 }
 
 .rundown-view {
-	padding-top: 7.8125rem;
+	padding-top: 4rem;
 	padding-bottom: 50vh;
 	padding-right: $statusbar-width;
 	transition: 0s padding-right 0s;
+
+	.invert-flash {
+		@keyframes invert-flash {
+			0% {
+				filter: #{'invert()'};
+			}
+			50% {
+				filter: #{'invert()'};
+			}
+			51% {
+				filter: none;
+			}
+			100% {
+				filter: none;
+			}
+		}
+
+		animation: invert-flash 1s infinite;
+	}
 
 	.rundown-view__part__icon {
 		display: inline-block;
@@ -250,11 +273,10 @@ body.no-overflow {
 			position: relative;
 			margin-right: 1em;
 			font-family: 'Roboto', Helvetica Neue, Arial, sans-serif;
-			font-weight: normal;
+			font-weight: 100;
 			color: $general-clock;
 			font-size: 1.5em;
 			margin-top: 0.8em;
-			font-weight: 100;
 			word-break: keep-all;
 			white-space: nowrap;
 
@@ -329,8 +351,17 @@ body.no-overflow {
 
 				&.rundown-name {
 					width: auto;
-					max-width: calc(30vw - 138px);
+					max-width: calc(40vw - 138px);
 					min-width: 100%;
+
+					> strong {
+						margin-right: 0.4em;
+					}
+
+					> svg.icon.looping {
+						width: 1.4em;
+						height: 1.4em;
+					}
 				}
 			}
 
@@ -449,6 +480,11 @@ body.no-overflow {
 	width: auto;
 }
 
+svg.icon {
+	margin-top: -0.2em;
+	position: relative;
+}
+
 // A component for displaying the segments (ENPS Stories/NKR Titles)
 .segment-timeline {
 	display: grid;
@@ -462,13 +498,14 @@ body.no-overflow {
 	-webkit-user-select: none;
 
 	width: auto;
-	margin: 1.5em;
+	margin: 1em 1.5em;
 	// padding: 0 0 0.15em 0.15em;
 
 	background: $segment-background-color;
-	-webkit-box-shadow: 7px 6px 20px 0px rgba(0, 0, 0, 0.7);
-	-moz-box-shadow: 7px 6px 20px 0px rgba(0, 0, 0, 0.7);
-	box-shadow: 7px 6px 20px 0px rgba(0, 0, 0, 0.7);
+	box-shadow: 7px 6px 15px 0px rgba(0, 0, 0, 0.7);
+
+	--segment-layer-height: #{$segment-layer-height};
+	border-radius: $segment-border-radius;
 
 	// padding has to be the same on both of these elements so that the layers and their controls line up
 	.segment-timeline__output-layers,
@@ -477,7 +514,10 @@ body.no-overflow {
 	}
 
 	.segment-timeline__title {
-		display: block;
+		display: grid;
+		grid-template-columns: auto;
+		grid-template-rows: [title-title] min-content [title-notifications] 1fr [title-identifiers] min-content [end];
+
 		margin: 0;
 		padding: 0;
 		overflow: hidden;
@@ -501,13 +541,16 @@ body.no-overflow {
 			hyphens: auto;
 			-webkit-hyphens: auto;
 			-ms-hyphens: auto;
+			grid-row: title-title / title-notifications;
 		}
 
 		.segment-timeline__title__notes {
 			margin: 0 0 0.5em;
 			padding: 0.5em;
 			line-height: 1.4em;
-			font-size: 75%;
+			font-size: 0.75em;
+			font-weight: 400;
+			grid-row: title-notifications / title-identifiers;
 
 			> .segment-timeline__title__notes__note {
 				position: relative;
@@ -518,18 +561,57 @@ body.no-overflow {
 					margin-bottom: 5px;
 				}
 
-				> .icon {
+				> svg {
 					position: absolute;
 					left: 0;
-					top: 1px;
-					height: auto;
-					width: 16px;
+					top: -0.1em;
+					height: 1.6em;
+					width: 1.6em;
 				}
 
-				&:hover {
-					text-decoration: underline;
+				> .segment-timeline__title__notes__count {
+					display: inline-block;
+					min-width: 1.1em;
+					line-height: 1.1em;
+					font-weight: 600;
+					text-align: center;
+					border-radius: 1em;
+					font-size: 0.9em;
+					position: relative;
+					top: -0.3em;
+					left: -0.3em;
+					white-space: nowrap;
+					padding: 0 2px;
+				}
+
+				> svg.type-warning + .segment-timeline__title__notes__count {
+					background: yellow;
+					color: #000;
+				}
+
+				> svg.type-critical + .segment-timeline__title__notes__count {
+					background: red;
+					color: #fff;
 				}
 			}
+		}
+
+		.segment-timeline__part-identifiers {
+			grid-row: title-identifiers / end;
+
+			.segment-timeline__part-identifiers__identifier {
+				margin: 2.5px;
+				padding: 0 10px 0 10px;
+				background-color: $part-identifier;
+				color: $part-identifier-text;
+				border-radius: 10px;
+			}
+		}
+	}
+
+	&.has-identifiers {
+		.segment-timeline__title__notes {
+			margin: 0;
 		}
 	}
 
@@ -620,31 +702,8 @@ body.no-overflow {
 	}
 
 	// This is the display in the top-left corner of the segment
+	.segment-timeline__timeUntil,
 	.segment-timeline__duration {
-		position: relative;
-		display: block;
-		margin: 0;
-		padding: 0;
-
-		grid-column: segment-name / segment-group-controls;
-		grid-row: header / main-view;
-
-		cursor: pointer;
-
-		font-size: 1em;
-		line-height: 2.45em;
-		padding-left: 25px;
-		margin-left: 0.3em;
-		letter-spacing: 1px;
-
-		@include collapse-triangle();
-
-		> span.negative {
-			color: $general-late-color;
-			font-weight: 500;
-		}
-	}
-	.segment-timeline__timeUntil {
 		position: relative;
 		display: block;
 		margin: 0;
@@ -654,54 +713,104 @@ body.no-overflow {
 		grid-column: segment-name / segment-group-controls;
 		grid-row: header / main-view;
 
-		cursor: pointer;
-
-		font-size: 1.3em;
-		font-weight: 400;
-		line-height: 2em;
 		padding-right: 0px;
 		margin-right: 0em;
-		letter-spacing: 0px;
+		font-size: 1em;
+		line-height: 2.9em;
+		letter-spacing: 0;
+		font-weight: 400;
+
+		> span.negative {
+			color: $general-late-color;
+			font-weight: 500;
+		}
+
+		> .segment-timeline__timeUntil__label,
+		> .segment-timeline__duration__label {
+			text-transform: uppercase;
+			display: block;
+			position: absolute;
+			top: 0;
+			right: 0;
+			font-size: 0.5em;
+			line-height: 2.8em;
+			color: #888;
+			font-weight: 400;
+		}
+	}
+	.segment-timeline__duration {
+		text-align: left;
+		margin-left: 0.5em;
+
+		> .segment-timeline__duration__label {
+			text-align: left;
+			left: 0;
+			right: auto;
+		}
+	}
+	.segment-timeline__timeUntil {
+		color: #888;
 	}
 	.segment-timeline__unsynced {
 		text-transform: uppercase;
 	}
 	.segment-timeline__timeline-zoom-buttons {
 		position: relative;
-		grid-column: segment-group-controls / timeline;
-		grid-row: zoom-area / end;
 		display: flex;
 		flex-direction: row;
-		justify-content: center;
-
-		opacity: 0;
-		transition: 0.5s opacity ease-in-out;
+		grid-column: segment-group-controls / timeline;
+		grid-row: header / end;
+		align-items: flex-end;
+		justify-content: space-between;
+		padding: 0 10px 0.05em 20px;
 
 		> .segment-timeline__timeline-zoom-buttons__button {
-			min-width: 30px;
-			min-height: 30px;
-			max-width: 30px;
-			max-height: 30px;
+			min-width: 22px;
+			min-height: 22px;
+			max-height: 22px;
+			border: none;
 			background: transparent;
-			transition: 0.3s background-color ease-in-out;
-			border-radius: 100%;
 			overflow: visible;
+			font-size: 1em;
+			padding: 0;
+			transition: 0.2s opacity;
 
-			&:hover {
-				background: $segment-title-background-color;
-				transition: 0s background-color;
+			color: #dddddd;
+
+			> svg {
+				height: 22px;
+				width: 22px;
+				margin-top: -0.05em;
+
+				.btn-bkg {
+					transition: 0.3s fill;
+				}
 			}
 
-			&:active {
-				background: $ui-button-primary;
-				transition: 0s background-color;
+			&:disabled {
+				opacity: 0.5;
 			}
-		}
-	}
-	&:hover {
-		.segment-timeline__timeline-zoom-buttons {
-			transition: 0.2s opacity ease-in-out;
-			opacity: 1;
+
+			&:not(:disabled) {
+				&:hover {
+					> svg {
+						.btn-bkg {
+							fill: #8c8c8c;
+							transition: 0s fill;
+						}
+					}
+				}
+
+				&:active {
+					> svg {
+						.btn-bkg {
+							fill: $ui-button-primary;
+							border-color: $ui-button-primary;
+							transition: 0s fill;
+						}
+					}
+				}
+			}
 		}
 	}
 	.segment-timeline__next-preview {
@@ -727,13 +836,21 @@ body.no-overflow {
 	.segment-timeline__zoom-area-container {
 		grid-column: timeline / end;
 		grid-row: zoom-area / end;
+
+		transition: 1s opacity, 0s visibility;
+
+		&.hidden {
+			opacity: 0;
+			transition: 1s opacity, 0s visibility 1s;
+			visibility: hidden;
+		}
 	}
 
 	// The area controlling the zoom at the bottom of the segment
 	.segment-timeline__zoom-area {
 		position: relative;
 		max-height: 4em;
-		margin: 0.2em 0.2em 0em 0;
+		margin: 0.2em 1em 0em 0;
 		padding: 1px 0;
 
 		transition: $output-layer-group-collapse-animation-duration max-height ease-in-out,
@@ -839,14 +956,12 @@ body.no-overflow {
 			bottom: 0;
 			left: 0;
 			right: 0;
-			overflow: hidden;
 
 			.segment-timeline__zoom-area__controls__left-mask {
 				position: absolute;
 				top: 0;
 				left: 0;
 				bottom: 0;
-				background: rgba(0, 0, 0, 0.5);
 			}
 
 			.segment-timeline__zoom-area__controls__right-mask {
@@ -854,73 +969,32 @@ body.no-overflow {
 				top: 0;
 				right: 0;
 				bottom: 0;
-				background: rgba(0, 0, 0, 0.5);
 			}
 
 			.segment-timeline__zoom-area__controls__selected-area {
 				position: absolute;
-				border: 1px solid rgba(255, 255, 255, 0.3);
+				border: 2px solid #fff;
 				top: 0;
 				bottom: 0;
 				width: 250px;
-				cursor: move;
-				cursor: -webkit-grab;
-				background: none;
+				cursor: ew-resize;
+				cursor: url(/images/zoom_area_move.png), ew-resize;
+				cursor: url(/images/zoom_area_move.png) 23 17, ew-resize;
+				background: rgba(255, 255, 255, 0.2);
+				box-shadow: 0 0 6px rgba(255, 255, 255, 1);
 
-				.segment-timeline__zoom-area__controls__selected-area__right-handle {
+				.segment-timeline__zoom-area__controls__selected-area__left-arrow {
 					position: absolute;
-					top: 0;
-					right: -10px;
-					bottom: 0;
-					width: 20px;
-					cursor: ew-resize;
-					z-index: 20;
+					top: 50%;
+					left: 3px;
+					transform: translate(0, -50%);
 				}
 
-				.segment-timeline__zoom-area__controls__selected-area__left-handle {
+				.segment-timeline__zoom-area__controls__selected-area__right-arrow {
 					position: absolute;
-					top: 0;
-					left: -10px;
-					bottom: 0;
-					width: 20px;
-					cursor: ew-resize;
-					z-index: 20;
-				}
-
-				.segment-timeline__zoom-area__controls__selected-area__center-handle {
-					display: none;
-				}
-
-				&.small-mode {
-					.segment-timeline__zoom-area__controls__selected-area__right-handle {
-						position: absolute;
-						top: 0;
-						right: -13px;
-						bottom: 0;
-						width: 10px;
-						z-index: 20;
-					}
-
-					.segment-timeline__zoom-area__controls__selected-area__left-handle {
-						position: absolute;
-						top: 0;
-						left: -13px;
-						bottom: 0;
-						width: 10px;
-						z-index: 20;
-					}
-
-					.segment-timeline__zoom-area__controls__selected-area__center-handle {
-						position: absolute;
-						top: 0;
-						left: -3px;
-						bottom: 0;
-						width: 10px;
-						cursor: move;
-						cursor: -webkit-grab;
-						z-index: 20;
-						display: block;
-					}
+					top: 50%;
+					right: 3px;
+					transform: translate(0, -50%);
 				}
 			}
 		}
@@ -966,7 +1040,7 @@ body.no-overflow {
 				($output-layer-group-collapse-animation-duration * 1/2),
 			$output-layer-group-collapse-animation-duration margin-bottom
 				($output-layer-group-collapse-animation-duration * 1/2);
-		margin-bottom: 2.5em;
+		margin-bottom: 1.5em;
 	}
 
 	.segment-timeline__timeline-grid {
@@ -1045,12 +1119,37 @@ body.no-overflow {
 			white-space: nowrap;
 			word-wrap: none;
 			opacity: 1;
+			background: $segment-background-color;
 
 			transition: $output-layer-group-collapse-animation-duration opacity ease-in-out
 				$output-layer-group-collapse-animation-duration;
 
 			> .overtime {
 				color: $general-late-color;
+			}
+		}
+
+		.segment-timeline__liveline__appendage {
+			position: absolute;
+			margin-left: 5px;
+			margin-top: 0.1em;
+
+			&.segment-timeline__liveline__appendage--piece-countdown {
+				color: $liveline-timecode-color;
+				font-weight: 400;
+				text-shadow: -1px -1px 1px #000, 1px -1px 1px #000, -1px 1px 1px #000, 1px 1px 1px #000, 2px 2px 5px #000;
+
+				white-space: nowrap;
+
+				> .segment-timeline__liveline__appendage--piece-countdown__content {
+					line-height: 1em;
+					font-size: 1.2em;
+				}
+
+				> .segment-timeline__liveline__appendage--piece-countdown__icon {
+					margin-left: 0.2em;
+					filter: drop-shadow(1px 1px 0px #000) drop-shadow(0px 0px 5px #000);
+				}
 			}
 		}
 
@@ -1136,7 +1235,6 @@ body.no-overflow {
 
 				.segment-timeline__part__nextline__label {
 					display: none;
-					text-transform: uppercase;
 					position: absolute;
 					top: -2px;
 					left: 2px;
@@ -1319,6 +1417,38 @@ body.no-overflow {
 					top: 50%;
 					transform: translateY(calc(-50% - 6px));
 				}
+
+				&.loop {
+					border-left: 0;
+				}
+			}
+
+			.segment-timeline__part__segment-end {
+				position: absolute;
+				top: -13px;
+				left: 100%;
+				white-space: nowrap;
+				bottom: -1.3rem;
+				margin-left: 2px;
+				padding-left: 0.5em;
+				text-transform: uppercase;
+				font-size: 0.9em;
+
+				.segment-timeline__part__segment-end__label {
+					position: absolute;
+					top: 50%;
+					transform: translateY(calc(-50% - 6px));
+
+					> svg > path {
+						stroke: $part-start-color;
+					}
+				}
+
+				&.is-next {
+					.segment-timeline__part__segment-end__label > svg > path {
+						stroke: $general-next-color;
+					}
+				}
 			}
 
 			.segment-timeline__part__future-shade {
@@ -1415,6 +1545,7 @@ body.no-overflow {
 						box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.5);
 						cursor: default;
 						transform-style: preserve-3d;
+						overflow: hidden;
 
 						// TODO: This is just temporary styling, to indicate that the layers are clickable
 						&:hover {
@@ -1466,7 +1597,7 @@ body.no-overflow {
 						.segment-timeline__piece__scene-marker {
 							position: absolute;
 							display: block;
-							top: -2px;
+							top: 0;
 							width: 2px;
 							bottom: 0;
 							background: linear-gradient(
@@ -1484,7 +1615,7 @@ body.no-overflow {
 						.segment-timeline__piece__anomaly-marker {
 							position: absolute;
 							display: block;
-							top: -2px;
+							top: 0;
 							height: calc(100% + 2px);
 							min-width: 2px;
 							background: repeating-linear-gradient(
@@ -1532,136 +1663,12 @@ body.no-overflow {
 							top: 0;
 							right: 0;
 							bottom: 0;
-							background: repeating-linear-gradient(
-								to right,
-								$segment-timeline-background-color 0,
-								$segment-timeline-background-color 5px,
-								transparent 5.1px,
-								transparent 10px
-							);
+							background-image: url('/images/freeze-frame-icicle.svg');
+							background-position: top left;
+							background-repeat: repeat-x;
+							background-size: auto 1em;
+							background-color: rgba(0, 0, 0, 0.6);
 							z-index: 2;
-						}
-
-						.segment-timeline__piece__label {
-							position: relative;
-							z-index: 10;
-							margin: 0 0.3em;
-							text-shadow: 0.5px 0.5px 8px rgba(0, 0, 0, 0.8);
-							font-weight: 400;
-							transition: ($output-layer-group-collapse-animation-duration * 1/3) opacity
-								($output-layer-group-collapse-animation-duration * 2/3);
-							pointer-events: none;
-							display: inline-block;
-							white-space: nowrap;
-
-							transform: translate3d(0, 0, 1px); // Just to make it render in front
-
-							&:not(.right-side) {
-								overflow: hidden;
-								text-overflow: ellipsis;
-							}
-
-							&.with-overflow {
-								overflow: visible !important;
-							}
-
-							&.secondary {
-								font-weight: 300;
-							}
-
-							&.third {
-								font-weight: 200;
-							}
-
-							&.emphasis {
-								font-weight: 500;
-							}
-
-							&.missing {
-								color: orange;
-							}
-
-							&.first-words {
-								position: absolute;
-								left: 0;
-								font-weight: 300;
-								font-style: italic;
-
-								> * {
-									position: relative;
-								}
-							}
-
-							&.right-side {
-								position: absolute;
-								right: 0;
-								transform: translate3d(0, 0, 15px);
-								text-align: right;
-								max-width: calc(100% - 10px);
-								overflow: hidden;
-								text-overflow: clip;
-
-								> * {
-									position: relative;
-								}
-
-								> .segment-timeline__piece__label {
-									margin-right: 0 !important;
-									margin-left: 5px !important;
-									overflow: initial;
-									max-width: none;
-								}
-
-								> .label-icon {
-									margin: 0 -10px 0 0;
-								}
-
-								> .label-icon.label-infinite-icon {
-									margin: 0 0 0 0;
-								}
-
-								> .last-words {
-									float: right;
-								}
-							}
-
-							&.last-words {
-								font-weight: 300;
-								font-style: italic;
-
-								display: block;
-							}
-
-							&.file-name {
-								font-weight: 200;
-							}
-
-							&.label-icon {
-								margin: 0;
-							}
-
-							&.label-overflow-time {
-								font-weight: 300;
-							}
-
-							> .segment-timeline__piece__label {
-								margin: 0;
-								max-width: none;
-							}
-
-							> .segment-timeline__piece__label + .segment-timeline__piece__label {
-								margin: 0 0.3em;
-							}
-
-							.segment-timeline__piece__label__transition-icon {
-								max-width: 16px;
-								max-height: 1.4em;
-								vertical-align: top;
-								height: 1.4em;
-								object-fit: contain;
-								object-position: center center;
-								margin-left: 0.5em;
-							}
 						}
 
 						&.hide-overflow-labels {
@@ -1737,7 +1744,11 @@ body.no-overflow {
 						.segment-timeline__layer {
 							// min-height: 0 causes the layers to collapse and divide the output-group min-height amongst themselves
 							min-height: 0;
-							border-bottom: 0px solid $segment-layer-separator-color;
+							border-bottom: 0.5px solid $segment-layer-separator-color;
+
+							&:last-child {
+								border-bottom-width: 0;
+							}
 
 							.segment-timeline__piece {
 								.segment-timeline__piece__label {
@@ -1748,7 +1759,142 @@ body.no-overflow {
 								}
 							}
 						}
+
+						&.layer-count-1 {
+							.segment-timeline__layer {
+								max-height: $segment-layer-height / 2;
+							}
+						}
 					}
+				}
+			}
+
+			.segment-timeline__piece__label {
+				position: relative;
+				z-index: 10;
+				margin: 0 0.3em;
+				text-shadow: 0.5px 0.5px 8px rgba(0, 0, 0, 0.8);
+				font-weight: 400;
+				transition: ($output-layer-group-collapse-animation-duration * 1/3) opacity
+					($output-layer-group-collapse-animation-duration * 2/3);
+				pointer-events: none;
+				display: inline-block;
+				white-space: nowrap;
+				line-height: 1.5em;
+
+				transform: translate3d(0, 0, 1px); // Just to make it render in front
+
+				&:not(.right-side) {
+					overflow: hidden;
+					text-overflow: ellipsis;
+				}
+
+				&.with-overflow {
+					overflow: visible !important;
+				}
+
+				&.secondary {
+					font-weight: 300;
+				}
+
+				&.third {
+					font-weight: 200;
+				}
+
+				&.emphasis {
+					font-weight: 500;
+				}
+
+				&.missing {
+					color: orange;
+				}
+
+				&.first-words {
+					position: absolute;
+					left: 0;
+					font-weight: 300;
+					font-style: italic;
+
+					> * {
+						position: relative;
+					}
+				}
+
+				&.right-side {
+					position: absolute;
+					right: 0;
+					transform: translate3d(0, 0, 15px);
+					text-align: right;
+					margin: 0;
+					padding: 0 0.3em;
+					max-width: calc(100% - 10px);
+					overflow: hidden;
+					text-overflow: clip;
+
+					> * {
+						position: relative;
+					}
+
+					> .segment-timeline__piece__label {
+						margin-right: 0 !important;
+						margin-left: 5px !important;
+						overflow: initial;
+						max-width: none;
+					}
+
+					> .label-icon {
+						margin: 0 -10px 0 0;
+					}
+
+					> .label-icon.label-infinite-icon {
+						margin: 0 0 0 0;
+					}
+				}
+
+				&.last-words {
+					font-weight: 300;
+					font-style: italic;
+
+					display: block;
+				}
+
+				&.file-name {
+					font-weight: 200;
+				}
+
+				&.label-icon {
+					margin: 0;
+				}
+
+				&.label-overflow-time {
+					text-shadow: 1px -1px 1px black, -1px 1px 1px black, -1px -1px 1px black, 1px 1px 1px black, 1px 1px 3px black,
+						1px 1px 8px black, 1px 1px 8px black, 1px 1px 8px black;
+					top: -7px;
+					right: -4px;
+					color: white;
+					font-weight: 600;
+					padding: 0;
+					font-size: 0.8em;
+					margin: 0;
+				}
+
+				> .segment-timeline__piece__label {
+					margin: 0;
+					max-width: none;
+				}
+
+				> .segment-timeline__piece__label + .segment-timeline__piece__label {
+					margin: 0 0.3em;
+				}
+
+				.segment-timeline__piece__label__transition-icon {
+					max-width: 16px;
+					max-height: 1.4em;
+					vertical-align: top;
+					height: 1.4em;
+					object-fit: contain;
+					object-position: center center;
+					margin-left: 0.5em;
 				}
 			}
 
@@ -1760,6 +1906,21 @@ body.no-overflow {
 					border-left: 2px dotted $segment-layer-background-mic;
 					margin-left: -2px;
 					box-shadow: 0px 0px 1px 1px rgba(0, 30, 0, 0.18);
+
+					&.hidden,
+					&.at-end {
+						display: none;
+					}
+				}
+
+				&.right-side {
+					left: auto;
+					right: 0;
+					bottom: auto;
+
+					&.hidden {
+						display: none;
+					}
 				}
 			}
 
@@ -1769,8 +1930,9 @@ body.no-overflow {
 				z-index: -1;
 				padding: 0 10px 0 10px;
 				box-sizing: border-box;
-				background-color: #7400d5;
+				background-color: $part-identifier;
 				border-radius: 0 10px 10px 0;
+				color: $part-identifier-text;
 			}
 		}
 	}
@@ -1792,7 +1954,7 @@ body.no-overflow {
 
 		transition: $output-layer-group-collapse-animation-duration padding ease-in-out;
 
-		margin: 0 0.5em;
+		margin: 0 0.3em;
 
 		// this is a single output-layer container
 		.segment-timeline__output-layer-control {
@@ -1802,9 +1964,9 @@ body.no-overflow {
 			// the label with the name for the output layer
 			.segment-timeline__output-layer-control__label {
 				font-weight: 500;
-				padding-left: 20px;
+				padding-left: 18px;
 				letter-spacing: 0.02em;
-				color: rgb(255, 255, 255);
+				color: #888;
 
 				opacity: 1;
 				transition: $output-layer-group-collapse-animation-duration opacity;
@@ -1819,7 +1981,8 @@ body.no-overflow {
 				height: $segment-layer-height;
 				min-height: $segment-layer-height;
 				letter-spacing: 0em;
-				color: rgb(207, 207, 207);
+				color: #888;
+				padding-left: 18px;
 
 				transition: $output-layer-group-collapse-animation-duration min-height ease-in-out,
 					$output-layer-group-collapse-animation-duration height ease-in-out,
@@ -1977,6 +2140,12 @@ body.no-overflow {
 			}
 		}
 
+		.segment-timeline__piece-appendage {
+			&.right-side {
+				display: none;
+			}
+		}
+
 		> .segment-timeline__timeline-container > .segment-timeline__timeline,
 		> .segment-timeline__next-preview {
 			.segment-timeline__part {
@@ -2042,12 +2211,51 @@ body.no-overflow {
 	}
 }
 
+.playlist-looping-header {
+	color: $rundown-divider-color;
+	background: $rundown-divider-background-color;
+	display: flex;
+	flex-wrap: wrap;
+	flex-direction: row;
+	align-items: stretch;
+	align-content: space-between;
+	overflow: hidden;
+	user-select: none;
+	-moz-user-select: none;
+	-webkit-user-select: none;
+
+	width: auto;
+	margin: 0;
+	padding: 0.3em 1em 0.3em 1.3em;
+
+	&.multi-rundown {
+		margin-bottom: -1.9em;
+		padding-bottom: 0;
+	}
+
+	> .playlist-looping-header__label {
+		margin: 0;
+		padding: 0;
+		font-size: 1.05em;
+		font-weight: 500;
+
+		> svg.icon {
+			width: 1.4em;
+		}
+	}
+}
+
+.segment-timeline-container + .playlist-looping-header {
+	margin-bottom: 0 !important;
+	padding-bottom: 0.3em !important;
+}
+
 .rundown-divider-timeline {
-	display: grid;
-	grid-column-gap: 0;
-	grid-row-gap: 0;
-	grid-template-columns: [rundown-name] 50% [rundown-details] auto;
-	grid-template-rows: auto;
+	display: flex;
+	flex-wrap: wrap;
+	flex-direction: row;
+	align-items: stretch;
+	align-content: space-between;
 	overflow: hidden;
 	user-select: none;
 	-moz-user-select: none;
@@ -2055,18 +2263,77 @@ body.no-overflow {
 
 	width: auto;
 	margin: 1.5em;
-	// padding: 0 0 0.15em 0.15em;
 
+	color: $rundown-divider-color;
 	background: $rundown-divider-background-color;
-	.rundown-divider-timeline__title {
-		margin: auto 0 auto 0; // center vertically
+
+	margin-left: 0;
+	margin-right: 0;
+	padding-left: 1em;
+	padding-right: 1em;
+
+	> .rundown-divider-timeline__title {
+		margin: 0 1em 0 0; // center vertically
 		padding: 0.3em;
 		line-height: 1.2em;
 		letter-spacing: 0px;
-		font-weight: 400;
+		font-weight: 600;
 		hyphens: auto;
 		-webkit-hyphens: auto;
 		-ms-hyphens: auto;
+		display: inline-block;
+	}
+
+	> .rundown-divider-timeline__playlist-name {
+		margin: 0.7em 1em 0.4em 0; // center vertically
+		line-height: 1.2em;
+		font-size: 1.17em;
+		letter-spacing: 0px;
+		font-weight: 200;
+		hyphens: auto;
+		-webkit-hyphens: auto;
+		-ms-hyphens: auto;
+	}
+
+	> .rundown-divider-timeline__notifications-group {
+		vertical-align: bottom;
+		white-space: nowrap;
+		margin-bottom: 0.6em;
+		margin-left: 0.5em;
+	}
+
+	.rundown-divider-timeline__notifications {
+		font-size: 0.8em;
+		font-weight: 400;
+		> svg {
+			height: 1.5em;
+			width: 1.5em;
+			vertical-align: bottom;
+			filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3));
+			margin-right: 0.3em;
+			position: relative;
+			top: 0.05em;
+		}
+		margin-right: 0.8em;
+	}
+
+	> .rundown-divider-timeline__expected-start,
+	> .rundown-divider-timeline__expected-duration {
+		vertical-align: bottom;
+		margin: 1em 0.5em 0.5em;
+
+		> time {
+			font-weight: 600;
+		}
+
+		> .rundown-divider-timeline__expected-start__countdown {
+			font-weight: 600;
+			color: $general-late-color;
+		}
+	}
+
+	> .rundown-divider-timeline__expected-duration {
+		margin-left: auto;
 	}
 }
 
@@ -2104,11 +2371,20 @@ body.no-overflow {
 	background: #474747;
 	box-shadow: 1px -1.5px 3.5px 1.5px rgba(0, 0, 0, 0.5);
 	padding: 0.7em 1em;
-	white-space: nowrap;
+	white-space: normal;
 	transform: translate(-50%, -100%);
 	animation: 0.2s inspector-fadeIn;
 	animation-iteration-count: 1;
 	border: 1px black solid;
+	max-width: 26em;
+
+	--popdown: 2em;
+
+	&.segment-timeline__mini-inspector--sub-inspector {
+		transform: none;
+		bottom: 100%;
+		width: 26em;
+	}
 
 	@include item-type-borders();
 
@@ -2124,10 +2400,61 @@ body.no-overflow {
 		top: -3px;
 		left: 7px;
 		right: 7px;
+		z-index: 1;
+	}
+
+	@include item-type-before-background();
+
+	&.segment-timeline__mini-inspector--graphics--preview {
+		border: none;
+		&::before {
+			display: none;
+		}
+	}
+
+	&.segment-timeline__mini-inspector--notice {
+		padding-left: 3.5em;
+	}
+
+	> .segment-timeline__mini-inspector__notice-header {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 2.5em;
+		bottom: 0;
+		border-top-left-radius: inherit;
+		border-bottom-left-radius: inherit;
+
+		> svg {
+			position: relative;
+			top: 0.6em;
+			left: 0.5em;
+			filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3));
+			width: 1.7em;
+			height: 1.7em;
+		}
+	}
+
+	> .segment-timeline__mini-inspector__notice + .segment-timeline__mini-inspector__properties {
+		margin-top: 0.5em;
+		padding-top: 0.5em;
+		border-top: 1px solid #333;
+	}
+
+	&.segment-timeline__mini-inspector--notice.notice-warning {
+		> .segment-timeline__mini-inspector__notice-header {
+			background-color: $color-status-warning;
+		}
+	}
+
+	&.segment-timeline__mini-inspector--notice.notice-critical {
+		> .segment-timeline__mini-inspector__notice-header {
+			background-color: $color-status-fatal;
+		}
 	}
 
 	&.segment-timeline__mini-inspector--pop-down {
-		transform: translate(-50%, 2em);
+		transform: translate(-50%, var(--popdown));
 	}
 
 	&.segment-timeline__mini-inspector--graphics {
@@ -2137,6 +2464,7 @@ body.no-overflow {
 		transform: translate(-100%, -100%);
 		width: 480px;
 		height: 270px;
+		max-width: none;
 
 		> .preview {
 			width: 1920px;
@@ -2189,6 +2517,22 @@ body.no-overflow {
 			padding: 0.2em 0.3em;
 			background: rgba(0, 0, 0, 0.25);
 			border-bottom-left-radius: 3px;
+		}
+
+		> .segment-timeline__mini-inspector__frame-marker {
+			display: block;
+			position: absolute;
+			bottom: 1px;
+
+			&.segment-timeline__mini-inspector__frame-marker--first-frame {
+				left: 6px;
+			}
+
+			&.segment-timeline__mini-inspector__frame-marker--last-frame {
+				left: auto;
+				right: 6px;
+				transform: scaleX(-1);
+			}
 		}
 
 		> .segment-timeline__mini-inspector__warnings {
@@ -2265,6 +2609,8 @@ body.no-overflow {
 		max-width: 60vw;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		word-break: break-all;
+		white-space: normal;
 	}
 	.mini-inspector__system {
 		font-weight: 300;

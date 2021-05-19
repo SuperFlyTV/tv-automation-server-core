@@ -1,12 +1,12 @@
 import * as _ from 'underscore'
 import { applyClassToDocument, registerCollection, ProtectedString, ProtectedStringProperties } from '../lib'
 import { Parts, DBPart } from './Parts'
-import { Rundowns, RundownId } from './Rundowns'
+import { RundownId } from './Rundowns'
 import { FindOptions, MongoQuery, TransformedCollection } from '../typings/meteor'
-import { Meteor } from 'meteor/meteor'
-import { IBlueprintSegmentDB, Time } from 'tv-automation-sofie-blueprints-integration'
-import { PartNote, SegmentNote } from '../api/notes'
+import { IBlueprintSegmentDB } from '@sofie-automation/blueprints-integration'
+import { SegmentNote } from '../api/notes'
 import { createMongoCollection } from './lib'
+import { registerIndex } from '../database'
 
 /** A string, identifying a Segment */
 export type SegmentId = ProtectedString<'SegmentId'>
@@ -22,13 +22,8 @@ export interface DBSegment extends ProtectedStringProperties<IBlueprintSegmentDB
 	/** The rundown this segment belongs to */
 	rundownId: RundownId
 
-	status?: string
-	expanded?: boolean
-
 	/** Is the segment in an unsynced state? */
-	unsynced?: boolean
-	/** Timestamp of when segment was unsynced */
-	unsyncedTime?: Time
+	orphaned?: 'deleted'
 
 	/** Holds notes (warnings / errors) thrown by the blueprints during creation */
 	notes?: Array<SegmentNote>
@@ -41,18 +36,15 @@ export class Segment implements DBSegment {
 	public rundownId: RundownId
 	public name: string
 	public metaData?: { [key: string]: any }
-	public status?: string
-	public expanded?: boolean
 	public notes?: Array<SegmentNote>
 	public isHidden?: boolean
-	public unsynced?: boolean
-	public unsyncedTime?: Time
+	public orphaned?: 'deleted'
 	public identifier?: string
 
 	constructor(document: DBSegment) {
-		_.each(_.keys(document), (key) => {
-			this[key] = document[key]
-		})
+		for (let [key, value] of Object.entries(document)) {
+			this[key] = value
+		}
 	}
 	getParts(selector?: MongoQuery<DBSegment>, options?: FindOptions<DBPart>) {
 		selector = selector || {}
@@ -80,11 +72,8 @@ export const Segments: TransformedCollection<Segment, DBSegment> = createMongoCo
 	transform: (doc) => applyClassToDocument(Segment, doc),
 })
 registerCollection('Segments', Segments)
-Meteor.startup(() => {
-	if (Meteor.isServer) {
-		Segments._ensureIndex({
-			rundownId: 1,
-			_rank: 1,
-		})
-	}
+
+registerIndex(Segments, {
+	rundownId: 1,
+	_rank: 1,
 })

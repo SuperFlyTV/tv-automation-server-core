@@ -31,6 +31,10 @@ export interface ServiceMessage {
 	criticality: Criticality
 	message: string
 	sender?: string
+	timestamp: number
+}
+
+export interface ExternalServiceMessage extends Omit<ServiceMessage, 'timestamp'> {
 	timestamp: Date
 }
 
@@ -70,6 +74,27 @@ export interface ICoreSystem {
 	/** Service messages currently valid for this instance */
 	serviceMessages: {
 		[index: string]: ServiceMessage
+	}
+
+	/** elastic APM (application performance monitoring) settings */
+	apm?: {
+		enabled?: boolean
+		/**
+		 * How many of the transactions to monitor.
+		 * Set to:
+		 * -1 to log nothing (max performance),
+		 * 0.5 to log 50% of the transactions,
+		 * 1 to log all transactions
+		 */
+		transactionSampleRate?: number
+	}
+	enableMonitorBlockedThread?: boolean
+
+	/** Cron jobs running nightly */
+	cron?: {
+		casparCGRestart?: {
+			enabled: boolean
+		}
 	}
 }
 

@@ -5,8 +5,10 @@ import { Meteor } from 'meteor/meteor'
 import { Random } from 'meteor/random'
 import { EventEmitter } from 'events'
 import { Time, ProtectedString, unprotectString, isProtectedString, protectString } from '../../../lib/lib'
-import { HTMLAttributes } from 'react'
 import { SegmentId } from '../../../lib/collections/Segments'
+import { ITranslatableMessage } from '../../../lib/api/TranslatableMessage'
+import { RundownAPI } from '../../../lib/api/rundown'
+import { RundownId } from '../../../lib/collections/Rundowns'
 
 /**
  * Priority level for Notifications.
@@ -16,13 +18,13 @@ import { SegmentId } from '../../../lib/collections/Segments'
  */
 export enum NoticeLevel {
 	/** Highest priority notification. Subject matter will affect operations. */
-	CRITICAL = 1,
+	CRITICAL = 0b0001, // 1
 	/** High priority notification. Operations will not be affected, but non-critical functions may be affected or the result may be undesirable. */
-	WARNING = 2,
+	WARNING = 0b0010, // 2
 	/** Confirmation of a successful operation and general informations. */
-	NOTIFICATION = 3,
+	NOTIFICATION = 0b0100, // 3
 	/** Tips to the user */
-	TIP = 4,
+	TIP = 0b1000, // 4
 }
 
 /**
@@ -40,6 +42,8 @@ export interface NotificationAction {
 	icon?: any
 	/** The method that will be called when the user takes the aciton. */
 	action?: Function
+	/** If true, will disable the action (ie the button will show, but not clickable). */
+	disabled?: boolean
 }
 
 /** A source of notifications */
@@ -109,7 +113,7 @@ export class NotifierHandle {
 	}
 }
 
-type NotificationsSource = SegmentId | string | undefined
+type NotificationsSource = RundownId | SegmentId | string | undefined
 /**
  * Singleton handling all the notifications.
  *
@@ -117,7 +121,7 @@ type NotificationsSource = SegmentId | string | undefined
  */
 class NotificationCenter0 {
 	/** Default notification timeout for non-persistent notifications */
-	private NOTIFICATION_TIMEOUT = 5000
+	private readonly NOTIFICATION_TIMEOUT = 5000
 	/** The highlighted source of notifications */
 	private highlightedSource: ReactiveVar<NotificationsSource>
 	/** The highlighted level of highlighted level */
@@ -125,9 +129,33 @@ class NotificationCenter0 {
 
 	private _isOpen: boolean = false
 
+	/** In concentration mode, non-Critical notifications will be snoozed automatically */
+	private _isConcentrationMode: boolean = false
+
 	constructor() {
 		this.highlightedSource = new ReactiveVar<NotificationsSource>(undefined)
 		this.highlightedLevel = new ReactiveVar<NoticeLevel>(NoticeLevel.TIP)
+	}
+
+	get isConcentrationMode(): boolean {
+		return this._isConcentrationMode
+	}
+
+	set isConcentrationMode(value: boolean) {
+		this._isConcentrationMode = value
+
+		if (value)
+			NotificationCenter.snoozeAll(
+				{
+					status: NoticeLevel.TIP,
+				},
+				{
+					status: NoticeLevel.NOTIFICATION,
+				},
+				{
+					status: NoticeLevel.WARNING,
+				}
+			)
 	}
 
 	get isOpen(): boolean {
@@ -173,6 +201,11 @@ class NotificationCenter0 {
 		if (!notice.snoozed && this._isOpen) {
 			notice.snooze()
 		}
+		if (!notice.snoozed && this._isConcentrationMode) {
+			if (notice.status !== NoticeLevel.CRITICAL && notice.timeout === undefined && notice.persistent === true) {
+				notice.snooze()
+			}
+		}
 
 		return {
 			id,
@@ -198,6 +231,8 @@ class NotificationCenter0 {
 		}
 	}
 
+	private willSnooze: { [k: string]: boolean } = {}
+
 	/**
 	 * Get a reactive array of notificaitons in the Notification Center
 	 *
@@ -208,10 +243,23 @@ class NotificationCenter0 {
 		notificationsDep.depend()
 
 		return _.flatten(
-			_.map(notifiers, (item, key) => {
-				item.result.forEach((i) => this._isOpen && !i.snoozed && i.snooze())
-				return item.result
-			}).concat(_.map(notifications, (item, key) => item))
+			Object.values(notifiers)
+				.map((item, key) => {
+					item.result.forEach((i, itemKey) => {
+						if (this._isOpen && !i.snoozed) i.snooze()
+						if (
+							this._isConcentrationMode &&
+							!i.snoozed &&
+							i.status !== NoticeLevel.CRITICAL &&
+							i.timeout === undefined &&
+							i.persistent === true
+						) {
+							i.snooze()
+						}
+					})
+					return item.result
+				})
+				.concat(Object.values(notifications))
 		)
 	}
 
@@ -221,16 +269,27 @@ class NotificationCenter0 {
 	 * @returns {number}
 	 * @memberof NotificationCenter0
 	 */
-	count(): number {
+	count(filter?: NoticeLevel): number {
 		notificationsDep.depend()
 
-		return (
-			_.reduce(
-				_.map(notifiers, (item) => item.result.length),
-				(a, b) => a + b,
-				0
-			) + _.values(notifications).length
-		)
+		// return (
+		// 	Object.values(notifiers)
+		// 		.map((item) => (item.result || []).length)
+		// 		.reduce((a, b) => a + b, 0) + Object.values(notifications).length
+		// )
+		if (filter === undefined) {
+			return (
+				Object.values(notifiers).reduce<number>((a, b) => a + (b.result || []).length, 0) +
+				Object.values(notifications).length
+			)
+		} else {
+			return (
+				Object.values(notifiers).reduce<number>(
+					(a, b) => a + (b.result || []).filter((item) => (item.status & filter) !== 0).length,
+					0
+				) + Object.values(notifications).filter((item) => (item.status & filter) !== 0).length
+			)
+		}
 	}
 
 	/**
@@ -238,8 +297,18 @@ class NotificationCenter0 {
 	 *
 	 * @memberof NotificationCenter0
 	 */
-	snoozeAll() {
-		const n = this.getNotifications()
+	snoozeAll(...filters: Partial<Notification>[]) {
+		let n = this.getNotifications()
+		if (filters && filters.length) {
+			const matchers = filters.map((filter) => _.matches(filter))
+			n = n.filter((v, _index, _array) =>
+				_.reduce(
+					matchers.map((m) => m(v)),
+					(value, memo) => value || memo,
+					false
+				)
+			)
+		}
 		n.forEach((item) => item.snooze())
 	}
 
@@ -305,7 +374,7 @@ export const NotificationCenter = new NotificationCenter0()
 export class Notification extends EventEmitter {
 	id: string | undefined
 	status: NoticeLevel
-	message: string | React.ReactElement<HTMLElement> | null
+	message: string | React.ReactElement<HTMLElement> | ITranslatableMessage | null
 	source: NotificationsSource
 	persistent?: boolean
 	timeout?: number
@@ -317,7 +386,7 @@ export class Notification extends EventEmitter {
 	constructor(
 		id: string | ProtectedString<any> | undefined,
 		status: NoticeLevel,
-		message: string | React.ReactElement<HTMLElement> | null,
+		message: string | React.ReactElement<HTMLElement> | ITranslatableMessage | null,
 		source: NotificationsSource,
 		created?: Time,
 		persistent?: boolean,
@@ -407,6 +476,33 @@ export class Notification extends EventEmitter {
 	}
 }
 
-window['testNotification'] = function() {
-	NotificationCenter.push(new Notification(undefined, NoticeLevel.TIP, 'Notification test', protectString('test')))
+export function getNoticeLevelForPieceStatus(statusCode: RundownAPI.PieceStatusCode): NoticeLevel | null {
+	return statusCode !== RundownAPI.PieceStatusCode.OK && statusCode !== RundownAPI.PieceStatusCode.UNKNOWN
+		? statusCode === RundownAPI.PieceStatusCode.SOURCE_NOT_SET
+			? NoticeLevel.CRITICAL
+			: // : innerPiece.status === RundownAPI.PieceStatusCode.SOURCE_MISSING ||
+			  // innerPiece.status === RundownAPI.PieceStatusCode.SOURCE_BROKEN
+			  NoticeLevel.WARNING
+		: null
 }
+
+window['testNotification'] = function (
+	delay: number,
+	level: NoticeLevel = NoticeLevel.CRITICAL,
+	fakePersistent: boolean = false
+) {
+	NotificationCenter.push(
+		new Notification(
+			undefined,
+			level,
+			'Notification test',
+			protectString('test'),
+			undefined,
+			fakePersistent,
+			undefined,
+			100000,
+			delay || 10000
+		)
+	)
+}
+window['notificationCenter'] = NotificationCenter

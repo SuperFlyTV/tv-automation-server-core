@@ -1,12 +1,12 @@
 import { addMigrationSteps } from './databaseMigration'
 import * as _ from 'underscore'
 import { Blueprints } from '../../lib/collections/Blueprints'
-import { BlueprintManifestType } from 'tv-automation-sofie-blueprints-integration'
+import { BlueprintManifestType } from '@sofie-automation/blueprints-integration'
 import { setExpectedVersion } from './lib'
 import { PeripheralDeviceAPI } from '../../lib/api/peripheralDevice'
 
 // 0.24.0 (Release 9)
-addMigrationSteps('0.24.0', [
+export const addSteps = addMigrationSteps('0.24.0', [
 	{
 		// Ensure blueprints have type set
 		id: 'blueprints have blueprintType',

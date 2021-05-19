@@ -7,11 +7,20 @@ export class RandomMock {
 		if (!id) id = 'randomId' + RandomMock.mockI++
 		return id
 	}
+	/** Returns a "mocked random" number 0-1 */
+	static number(): number {
+		return (RandomMock.mockI++ / 1.6180339887) % 1
+	}
 }
 export function setup() {
 	return {
 		Random: RandomMock,
 	}
+}
+
+export function restartRandomId() {
+	RandomMock.mockI = 9000
+	RandomMock.mockIds = []
 }
 
 export function resetRandomId() {

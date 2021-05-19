@@ -1,4 +1,4 @@
-import { TSR } from 'tv-automation-sofie-blueprints-integration'
+import { TSR } from '@sofie-automation/blueprints-integration'
 
 /**
  * The basic PlayoutDevice settings structure.
@@ -7,5 +7,8 @@ import { TSR } from 'tv-automation-sofie-blueprints-integration'
 export interface PlayoutDeviceSettings {
 	devices: {
 		[deviceId: string]: TSR.DeviceOptionsAny
+	}
+	locations: {
+		[deviceId: string]: any // todo
 	}
 }

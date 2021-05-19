@@ -1,12 +1,20 @@
 import * as _ from 'underscore'
-import * as SuperTimeline from 'superfly-timeline'
 import { Pieces, Piece } from './collections/Pieces'
-import { IOutputLayer, ISourceLayer } from 'tv-automation-sofie-blueprints-integration'
-import { literal } from './lib'
-import { DBSegment } from './collections/Segments'
-import { PartId } from './collections/Parts'
+import { IOutputLayer, ISourceLayer } from '@sofie-automation/blueprints-integration'
+import { DBSegment, SegmentId } from './collections/Segments'
+import { PartId, DBPart } from './collections/Parts'
 import { PartInstance } from './collections/PartInstances'
-import { PieceInstance, PieceInstances, wrapPieceToTemporaryInstance } from './collections/PieceInstances'
+import { PieceInstance, PieceInstances } from './collections/PieceInstances'
+import {
+	getPieceInstancesForPart,
+	buildPiecesStartingInThisPartQuery,
+	buildPastInfinitePiecesForThisPartQuery,
+	PieceInstanceWithTimings,
+} from './rundown/infinites'
+import { FindOptions } from './typings/meteor'
+import { invalidateAfter } from '../client/lib/invalidatingTime'
+import { getCurrentTime, protectString } from './lib'
+import { RundownPlaylistActivationId } from './collections/RundownPlaylists'
 
 export interface SegmentExtended extends DBSegment {
 	/** Output layers available in the installation used by this segment */
@@ -19,9 +27,11 @@ export interface SegmentExtended extends DBSegment {
 	}
 }
 
+export type PartInstanceLimited = Omit<PartInstance, 'isTaken' | 'previousPartEndState' | 'takeCount'>
+
 export interface PartExtended {
 	partId: PartId
-	instance: PartInstance
+	instance: PartInstanceLimited
 	/** Pieces belonging to this part */
 	pieces: Array<PieceExtended>
 	renderedDuration: number
@@ -40,11 +50,8 @@ export interface ISourceLayerExtended extends ISourceLayer {
 	pieces: Array<PieceExtended>
 	followingItems: Array<PieceExtended>
 }
-interface IPieceExtendedDictionary {
-	[key: string]: PieceExtended
-}
 export interface PieceExtended {
-	instance: PieceInstance
+	instance: PieceInstanceWithTimings
 
 	/** Source layer that this piece belongs to */
 	sourceLayer?: ISourceLayerExtended
@@ -64,87 +71,115 @@ export interface PieceExtended {
 	maxLabelWidth?: number
 }
 
-export function getPieceInstancesForPartInstance(partInstance: PartInstance) {
-	if (partInstance.isTemporary || partInstance.isScratch) {
-		return Pieces.find({
-			partId: partInstance.part._id,
-		}).map((p) => wrapPieceToTemporaryInstance(p, partInstance._id))
-	} else {
-		return PieceInstances.find({ partInstanceId: partInstance._id }).fetch()
-	}
+export function fetchPiecesThatMayBeActiveForPart(
+	part: DBPart,
+	partsBeforeThisInSegmentSet: Set<PartId>,
+	segmentsBeforeThisInRundownSet: Set<SegmentId>
+): Piece[] {
+	const piecesStartingInPart = Pieces.find(buildPiecesStartingInThisPartQuery(part)).fetch()
+
+	const partsBeforeThisInSegment = Array.from(partsBeforeThisInSegmentSet.values())
+	const segmentsBeforeThisInRundown = Array.from(segmentsBeforeThisInRundownSet.values())
+
+	const infinitePieces = Pieces.find(
+		buildPastInfinitePiecesForThisPartQuery(part, partsBeforeThisInSegment, segmentsBeforeThisInRundown)
+	).fetch()
+
+	return [...piecesStartingInPart, ...infinitePieces]
 }
 
-export function offsetTimelineEnableExpression(
-	val: SuperTimeline.Expression | undefined,
-	offset: string | number | undefined
+const SIMULATION_INVALIDATION = 3000
+
+/**
+ * Get the PieceInstances for a given PartInstance. Will create temporary PieceInstances, based on the Pieces collection
+ * if the partInstance is temporary.
+ *
+ * @export
+ * @param {PartInstanceLimited} partInstance
+ * @param {Set<PartId>} partsBeforeThisInSegmentSet
+ * @param {Set<SegmentId>} segmentsBeforeThisInRundownSet
+ * @param {PartId[]} orderedAllParts
+ * @param {boolean} nextPartIsAfterCurrentPart
+ * @param {(PartInstance | undefined)} currentPartInstance
+ * @param {(PieceInstance[] | undefined)} currentPartInstancePieceInstances
+ * @param {FindOptions<PieceInstance>} [options]
+ * @param {boolean} [pieceInstanceSimulation] If there are no PieceInstances in the PartInstance, create temporary
+ * 		PieceInstances based on the Pieces collection and register a reactive dependancy to recalculate the current
+ * 		computation after some time to return the actual PieceInstances for the PartInstance.
+ * @return {*}
+ */
+export function getPieceInstancesForPartInstance(
+	playlistActivationId: RundownPlaylistActivationId | undefined,
+	partInstance: PartInstanceLimited,
+	partsBeforeThisInSegmentSet: Set<PartId>,
+	segmentsBeforeThisInRundownSet: Set<SegmentId>,
+	orderedAllParts: PartId[],
+	nextPartIsAfterCurrentPart: boolean,
+	currentPartInstance: PartInstance | undefined,
+	currentPartInstancePieceInstances: PieceInstance[] | undefined,
+	options?: FindOptions<PieceInstance>,
+	pieceInstanceSimulation?: boolean
 ) {
-	if (offset === undefined) {
-		return val
+	if (partInstance.isTemporary) {
+		return getPieceInstancesForPart(
+			playlistActivationId || protectString(''),
+			currentPartInstance,
+			currentPartInstancePieceInstances,
+			partInstance.part,
+			partsBeforeThisInSegmentSet,
+			segmentsBeforeThisInRundownSet,
+			fetchPiecesThatMayBeActiveForPart(
+				partInstance.part,
+				partsBeforeThisInSegmentSet,
+				segmentsBeforeThisInRundownSet
+			),
+			orderedAllParts,
+			partInstance._id,
+			nextPartIsAfterCurrentPart,
+			partInstance.isTemporary
+		)
 	} else {
-		// return literal<SuperTimeline.ExpressionObj>({
-		// 	l: interpretExpression(val || null) || 0,
-		// 	o: '+',
-		// 	r: offset
-		// })
-		if (_.isString(val) || _.isNumber(val)) {
-			return `${val} + ${offset}`
-		} else if (_.isObject(val)) {
-			return literal<SuperTimeline.ExpressionObj>({
-				l: val || 0,
-				o: '+',
-				r: offset,
-			})
-		} else if (val === undefined) {
-			return offset
+		const results =
+			// Check if the PartInstance we're currently looking for PieceInstances for is already the current one.
+			// If that's the case, we can sace ourselves a scan across the PieceInstances collection
+			partInstance._id === currentPartInstance?._id && currentPartInstancePieceInstances
+				? currentPartInstancePieceInstances
+				: PieceInstances.find({ partInstanceId: partInstance._id }, options).fetch()
+		// check if we can return the results immediately
+		if (results.length > 0 || !pieceInstanceSimulation) return results
+
+		// if a simulation has been requested and less than SIMULATION_INVALIDATION time has passed
+		// since the PartInstance has been nexted or taken, simulate the PieceInstances using the Piece collection.
+		const now = getCurrentTime()
+		if (
+			pieceInstanceSimulation &&
+			results.length === 0 &&
+			(!partInstance.timings ||
+				(partInstance.timings.next || 0) > now - SIMULATION_INVALIDATION ||
+				(partInstance.timings.take || 0) > now - SIMULATION_INVALIDATION)
+		) {
+			// make sure to invalidate the current computation after SIMULATION_INVALIDATION has passed
+			invalidateAfter(SIMULATION_INVALIDATION)
+			return getPieceInstancesForPart(
+				playlistActivationId || protectString(''),
+				currentPartInstance,
+				currentPartInstancePieceInstances,
+				partInstance.part,
+				partsBeforeThisInSegmentSet,
+				segmentsBeforeThisInRundownSet,
+				fetchPiecesThatMayBeActiveForPart(
+					partInstance.part,
+					partsBeforeThisInSegmentSet,
+					segmentsBeforeThisInRundownSet
+				),
+				orderedAllParts,
+				partInstance._id,
+				nextPartIsAfterCurrentPart,
+				true
+			)
 		} else {
-			// Unreachable fallback case
-			return val
-		}
-	}
-}
-
-export function calculatePieceTimelineEnable(piece: Piece, offset?: number): SuperTimeline.TimelineEnable {
-	let duration: SuperTimeline.Expression | undefined
-	let end: SuperTimeline.Expression | undefined
-	if (piece.playoutDuration !== undefined) {
-		duration = piece.playoutDuration
-	} else if (piece.userDuration !== undefined) {
-		duration = piece.userDuration.duration
-		end = piece.userDuration.end
-	} else {
-		duration = piece.enable.duration
-		end = piece.enable.end
-	}
-
-	// If we have an end and not a start, then use that with a duration
-	if ((end !== undefined || piece.enable.end !== undefined) && piece.enable.start === undefined) {
-		return {
-			end: end !== undefined ? end : offsetTimelineEnableExpression(piece.enable.end, offset),
-			duration: duration,
-		}
-		// Otherwise, if we have a start, then use that with either the end or duration
-	} else if (piece.enable.start !== undefined) {
-		let enable = literal<SuperTimeline.TimelineEnable>({})
-
-		if (piece.enable.start === 'now') {
-			enable.start = 'now'
-		} else {
-			enable.start = offsetTimelineEnableExpression(piece.enable.start, offset)
-		}
-
-		if (duration !== undefined) {
-			enable.duration = duration
-		} else if (end !== undefined) {
-			enable.end = end
-		} else if (piece.enable.end !== undefined) {
-			enable.end = offsetTimelineEnableExpression(piece.enable.end, offset)
-		}
-		return enable
-	} else {
-		return {
-			start: 0,
-			duration: duration,
-			end: end,
+			// otherwise, return results as they are
+			return results
 		}
 	}
 }

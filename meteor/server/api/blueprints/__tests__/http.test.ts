@@ -9,6 +9,8 @@ import * as api from '../api'
 import { BlueprintId } from '../../../../lib/collections/Blueprints'
 jest.mock('../api.ts')
 
+const DEFAULT_CONTEXT = { userId: '' }
+
 require('../http.ts') // include in order to create the Meteor methods needed
 
 describe('Test blueprint http api', () => {
@@ -85,7 +87,7 @@ describe('Test blueprint http api', () => {
 			expect(res.bufferStr).toEqual('')
 
 			expect(api.uploadBlueprint).toHaveBeenCalledTimes(1)
-			expect(api.uploadBlueprint).toHaveBeenCalledWith({}, id, body, undefined, false)
+			expect(api.uploadBlueprint).toHaveBeenCalledWith(DEFAULT_CONTEXT, id, body, undefined, false)
 		})
 		testInFiber('with body & force', () => {
 			const id = 'id1'
@@ -96,7 +98,7 @@ describe('Test blueprint http api', () => {
 			expect(res.bufferStr).toEqual('')
 
 			expect(api.uploadBlueprint).toHaveBeenCalledTimes(1)
-			expect(api.uploadBlueprint).toHaveBeenCalledWith({}, id, body, undefined, true)
+			expect(api.uploadBlueprint).toHaveBeenCalledWith(DEFAULT_CONTEXT, id, body, undefined, true)
 		})
 		testInFiber('internal error', () => {
 			const id = 'id1'
@@ -114,7 +116,7 @@ describe('Test blueprint http api', () => {
 				expect(res.bufferStr).toEqual('[505] Some thrown error')
 
 				expect(api.uploadBlueprint).toHaveBeenCalledTimes(1)
-				expect(api.uploadBlueprint).toHaveBeenCalledWith({}, id, body, undefined, false)
+				expect(api.uploadBlueprint).toHaveBeenCalledWith(DEFAULT_CONTEXT, id, body, undefined, false)
 			} finally {
 				uploadBlueprint.mockRestore()
 			}
@@ -129,7 +131,7 @@ describe('Test blueprint http api', () => {
 			expect(res.bufferStr).toEqual('')
 
 			expect(api.uploadBlueprint).toHaveBeenCalledTimes(1)
-			expect(api.uploadBlueprint).toHaveBeenCalledWith({}, id, body, name, false)
+			expect(api.uploadBlueprint).toHaveBeenCalledWith(DEFAULT_CONTEXT, id, body, name, false)
 		})
 	})
 
@@ -217,36 +219,42 @@ describe('Test blueprint http api', () => {
 			const id = 'id1'
 			const body = 'bodyStr1'
 
-			const payload: any = {}
-			payload[id] = body
+			const payload: any = {
+				blueprints: {},
+			}
+			payload.blueprints[id] = body
 
 			const res = callRoute(JSON.stringify(payload))
 			expect(res.statusCode).toEqual(200)
 			expect(res.bufferStr).toEqual('')
 
 			expect(api.uploadBlueprint).toHaveBeenCalledTimes(1)
-			expect(api.uploadBlueprint).toHaveBeenCalledWith({}, id, body, id)
+			expect(api.uploadBlueprint).toHaveBeenCalledWith(DEFAULT_CONTEXT, id, body, id)
 		})
 		testInFiber('with json body as object', () => {
 			const id = 'id1'
 			const body = 'bodyStr1'
 
-			const payload: any = {}
-			payload[id] = body
+			const payload: any = {
+				blueprints: {},
+			}
+			payload.blueprints[id] = body
 
 			const res = callRoute(payload)
 			expect(res.statusCode).toEqual(200)
 			expect(res.bufferStr).toEqual('')
 
 			expect(api.uploadBlueprint).toHaveBeenCalledTimes(1)
-			expect(api.uploadBlueprint).toHaveBeenCalledWith({}, id, body, id)
+			expect(api.uploadBlueprint).toHaveBeenCalledWith(DEFAULT_CONTEXT, id, body, id)
 		})
 		testInFiber('with json body - multiple', () => {
 			const count = 10
 
-			const payload: any = {}
+			const payload: any = {
+				blueprints: {},
+			}
 			for (let i = 0; i < count; i++) {
-				payload[`id${i}`] = `body${i}`
+				payload.blueprints[`id${i}`] = `body${i}`
 			}
 
 			const res = callRoute(JSON.stringify(payload))
@@ -255,15 +263,17 @@ describe('Test blueprint http api', () => {
 
 			expect(api.uploadBlueprint).toHaveBeenCalledTimes(count)
 			for (let i = 0; i < count; i++) {
-				expect(api.uploadBlueprint).toHaveBeenCalledWith({}, `id${i}`, `body${i}`, `id${i}`)
+				expect(api.uploadBlueprint).toHaveBeenCalledWith(DEFAULT_CONTEXT, `id${i}`, `body${i}`, `id${i}`)
 			}
 		})
 		testInFiber('with errors', () => {
 			const count = 10
 
-			const payload: any = {}
+			const payload: any = {
+				blueprints: {},
+			}
 			for (let i = 0; i < count; i++) {
-				payload[`id${i}`] = `body${i}`
+				payload.blueprints[`id${i}`] = `body${i}`
 			}
 
 			const uploadBlueprint = resetUploadMock()
@@ -284,7 +294,7 @@ describe('Test blueprint http api', () => {
 
 				expect(api.uploadBlueprint).toHaveBeenCalledTimes(count)
 				for (let i = 0; i < count; i++) {
-					expect(api.uploadBlueprint).toHaveBeenCalledWith({}, `id${i}`, `body${i}`, `id${i}`)
+					expect(api.uploadBlueprint).toHaveBeenCalledWith(DEFAULT_CONTEXT, `id${i}`, `body${i}`, `id${i}`)
 				}
 			} finally {
 				uploadBlueprint.mockRestore()

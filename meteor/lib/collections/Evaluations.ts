@@ -1,11 +1,11 @@
 import { TransformedCollection, UserId } from '../typings/meteor'
 import { Time, registerCollection, ProtectedString } from '../lib'
-import { Meteor } from 'meteor/meteor'
 import { createMongoCollection } from './lib'
 import { StudioId } from './Studios'
 import { RundownPlaylistId } from './RundownPlaylists'
 import { SnapshotId } from './Snapshots'
 import { OrganizationId } from './Organization'
+import { registerIndex } from '../database'
 
 /** A string, identifying a Evaluation */
 export type EvaluationId = ProtectedString<'EvaluationId'>
@@ -30,11 +30,7 @@ export const Evaluations: TransformedCollection<Evaluation, Evaluation> = create
 )
 registerCollection('Evaluations', Evaluations)
 
-Meteor.startup(() => {
-	if (Meteor.isServer) {
-		Evaluations._ensureIndex({
-			organizationId: 1,
-			timestamp: 1,
-		})
-	}
+registerIndex(Evaluations, {
+	organizationId: 1,
+	timestamp: 1,
 })

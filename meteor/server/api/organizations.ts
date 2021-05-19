@@ -6,7 +6,7 @@ import { registerClassToMeteorMethods } from '../methods'
 import { Organizations, OrganizationId, DBOrganization, DBOrganizationBase } from '../../lib/collections/Organization'
 import { OrganizationContentWriteAccess } from '../security/organization'
 import { triggerWriteAccessBecauseNoCheckNecessary } from '../security/lib/securityVerify'
-import { insertStudioInner } from './studios'
+import { insertStudioInner } from './studio/api'
 import { insertShowStyleBaseInner } from './showStyles'
 import { Studios } from '../../lib/collections/Studios'
 import { ShowStyleBases } from '../../lib/collections/ShowStyleBases'
@@ -74,7 +74,7 @@ export function removeOrganization(context: MethodContext, organizationId: Organ
 	users.forEach((user) => {
 		resetCredentials({ userId: user._id })
 	})
-	Organizations.remove({ organizationId })
+	Organizations.remove(organizationId)
 }
 
 class ServerOrganizationAPI extends MethodContextAPI implements NewOrganizationAPI {

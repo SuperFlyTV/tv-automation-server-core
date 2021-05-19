@@ -1,7 +1,7 @@
 import * as React from 'react'
 import Escape from 'react-escape'
 import { withTranslation } from 'react-i18next'
-import { ContextMenu, MenuItem } from 'react-contextmenu'
+import { ContextMenu, MenuItem } from '@jstarpl/react-contextmenu'
 import { Part } from '../../../lib/collections/Parts'
 import { RundownPlaylist } from '../../../lib/collections/RundownPlaylists'
 import { Translated } from '../../lib/ReactMeteorData/ReactMeteorData'
@@ -39,54 +39,63 @@ export const SegmentContextMenu = withTranslation()(
 			const isCurrentPart =
 				(part && this.props.playlist && part.instance._id === this.props.playlist.currentPartInstanceId) || undefined
 
-			return this.props.studioMode && this.props.playlist && this.props.playlist.active ? (
+			return this.props.studioMode && this.props.playlist && this.props.playlist.activationId ? (
 				<Escape to="document">
 					<ContextMenu id="segment-timeline-context-menu">
-						{part && !part.instance.part.invalid && timecode !== null && (
-							<React.Fragment>
-								{startsAt !== null && (
-									<MenuItem onClick={(e) => this.props.onSetNext(part.instance.part, e)} disabled={isCurrentPart}>
-										<span dangerouslySetInnerHTML={{ __html: t('Set this part as <strong>Next</strong>') }}></span> (
-										{RundownUtils.formatTimeToShortTime(Math.floor(startsAt / 1000) * 1000)})
-									</MenuItem>
+						{this.props.playlist.activationId ? (
+							<>
+								{part && !part.instance.part.invalid && timecode !== null && (
+									<>
+										{startsAt !== null && (
+											<MenuItem
+												onClick={(e) => this.props.onSetNext(part.instance.part, e)}
+												disabled={isCurrentPart || !!part.instance.orphaned}
+											>
+												<span dangerouslySetInnerHTML={{ __html: t('Set this part as <strong>Next</strong>') }}></span>{' '}
+												({RundownUtils.formatTimeToShortTime(Math.floor(startsAt / 1000) * 1000)})
+											</MenuItem>
+										)}
+										{startsAt !== null && part && this.props.enablePlayFromAnywhere ? (
+											<>
+												<MenuItem
+													onClick={(e) => this.onSetAsNextFromHere(part.instance.part, e)}
+													disabled={isCurrentPart || !!part.instance.orphaned}
+												>
+													<span dangerouslySetInnerHTML={{ __html: t('Set <strong>Next</strong> Here') }}></span> (
+													{RundownUtils.formatTimeToShortTime(Math.floor((startsAt + timecode) / 1000) * 1000)})
+												</MenuItem>
+												<MenuItem
+													onClick={(e) => this.onPlayFromHere(part.instance.part, e)}
+													disabled={isCurrentPart || !!part.instance.orphaned}
+												>
+													<span dangerouslySetInnerHTML={{ __html: t('Play from Here') }}></span> (
+													{RundownUtils.formatTimeToShortTime(Math.floor((startsAt + timecode) / 1000) * 1000)})
+												</MenuItem>
+											</>
+										) : null}
+									</>
 								)}
-								{startsAt !== null && part && this.props.enablePlayFromAnywhere ? (
-									<React.Fragment>
-										<MenuItem onClick={(e) => this.onSetAsNextFromHere(part.instance.part, e)} disabled={isCurrentPart}>
-											<span dangerouslySetInnerHTML={{ __html: t('Set <strong>Next</strong> Here') }}></span> (
-											{RundownUtils.formatTimeToShortTime(Math.floor((startsAt + timecode) / 1000) * 1000)})
+								{part && timecode === null && (
+									<>
+										<MenuItem onClick={(e) => this.props.onSetNext(part.instance.part, e)} disabled={isCurrentPart}>
+											<span dangerouslySetInnerHTML={{ __html: t('Set segment as <strong>Next</strong>') }}></span>
 										</MenuItem>
-										<MenuItem onClick={(e) => this.onPlayFromHere(part.instance.part, e)} disabled={isCurrentPart}>
-											<span dangerouslySetInnerHTML={{ __html: t('Play from Here') }}></span> (
-											{RundownUtils.formatTimeToShortTime(Math.floor((startsAt + timecode) / 1000) * 1000)})
-										</MenuItem>
-									</React.Fragment>
-								) : null}
-							</React.Fragment>
-						)}
-						{part && timecode === null && (
-							<React.Fragment>
-								<MenuItem onClick={(e) => this.props.onSetNext(part.instance.part, e)} disabled={isCurrentPart}>
-									<span dangerouslySetInnerHTML={{ __html: t('Set segment as <strong>Next</strong>') }}></span>
-								</MenuItem>
-								{part.instance.segmentId !== this.props.playlist.nextSegmentId ? (
-									<MenuItem onClick={(e) => this.props.onSetNextSegment(part.instance.segmentId, e)}>
-										<span>{t('Queue segment')}</span>
-									</MenuItem>
-								) : (
-									<MenuItem onClick={(e) => this.props.onSetNextSegment(null, e)}>
-										<span>{t('Clear queued segment')}</span>
-									</MenuItem>
+										{part.instance.segmentId !== this.props.playlist.nextSegmentId ? (
+											<MenuItem onClick={(e) => this.props.onSetNextSegment(part.instance.segmentId, e)}>
+												<span>{t('Queue segment')}</span>
+											</MenuItem>
+										) : (
+											<MenuItem onClick={(e) => this.props.onSetNextSegment(null, e)}>
+												<span>{t('Clear queued segment')}</span>
+											</MenuItem>
+										)}
+									</>
 								)}
-								{Settings.allowUnsyncedSegments && this.menuItemResyncSegment(t, segment)}
-							</React.Fragment>
+								{Settings.preserveUnsyncedPlayingSegmentContents && this.menuItemResyncSegment(t, segment)}
+							</>
+						) : (
+							Settings.preserveUnsyncedPlayingSegmentContents && this.menuItemResyncSegment(t, segment)
 						)}
-					</ContextMenu>
-				</Escape>
-			) : Settings.allowUnsyncedSegments && segment && segment.unsynced ? (
-				<Escape to="document">
-					<ContextMenu id="segment-timeline-context-menu">
-						<React.Fragment>{this.menuItemResyncSegment(t, segment)}</React.Fragment>
 					</ContextMenu>
 				</Escape>
 			) : null
@@ -96,7 +105,7 @@ export const SegmentContextMenu = withTranslation()(
 			t: (key: string | string[], options?: unknown | undefined) => any,
 			segment: SegmentUi | null
 		) => {
-			if (segment && segment.unsynced) {
+			if (segment && segment.orphaned) {
 				return (
 					<MenuItem onClick={(e) => this.props.onResyncSegment(segment, e)}>
 						<span>{t('Resync Segment')}</span>

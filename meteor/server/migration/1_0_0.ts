@@ -1,11 +1,12 @@
 import { addMigrationSteps } from './databaseMigration'
 import * as _ from 'underscore'
 import { Studios } from '../../lib/collections/Studios'
-import { ensureCollectionProperty, setExpectedVersion } from './lib'
+import { ensureCollectionProperty, ensureCollectionPropertyManual, setExpectedVersion } from './lib'
 import { PeripheralDeviceAPI } from '../../lib/api/peripheralDevice'
+import { Studio as Studio_1_10_0 } from './deprecatedDataTypes/1_10_0'
 
 // 1.0.0 (Release 12)
-addMigrationSteps('1.0.0', [
+export const addSteps = addMigrationSteps('1.0.0', [
 	// renamePropertiesInCollection('Studios rename config',
 	// 	Studios,
 	// 	'Studios',
@@ -22,7 +23,8 @@ addMigrationSteps('1.0.0', [
 		dependOnResultFrom: 'Studios rename config',
 		validate: () => {
 			let validate: boolean | string = false
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.slackEvaluationUrls) {
 					if (_.find(studio.config, (c) => c._id === 'slack_evaluation')) {
 						validate = `slackEvaluationUrls not set on studio ${studio._id}`
@@ -32,7 +34,8 @@ addMigrationSteps('1.0.0', [
 			return validate
 		},
 		migrate: () => {
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.slackEvaluationUrls) {
 					const value = _.find(studio.config, (c) => c._id === 'slack_evaluation')
 					if (value) {
@@ -52,11 +55,10 @@ addMigrationSteps('1.0.0', [
 			})
 		},
 	},
-	ensureCollectionProperty(
+	ensureCollectionPropertyManual(
 		'Studios',
 		{},
 		'settings.slackEvaluationUrls',
-		null,
 		'text',
 		'Slack webhook URLs',
 		'Enter the URL to the Slack webhook (example: "https://hooks.slack.com/services/WEBHOOKURL"',
@@ -71,7 +73,8 @@ addMigrationSteps('1.0.0', [
 		dependOnResultFrom: 'Studios rename config',
 		validate: () => {
 			let validate: boolean | string = false
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.supportedMediaFormats) {
 					if (_.find(studio.config, (c) => c._id === 'mediaResolutions')) {
 						validate = `supportedMediaFormats not set on studio ${studio._id}`
@@ -81,7 +84,8 @@ addMigrationSteps('1.0.0', [
 			return validate
 		},
 		migrate: () => {
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.supportedMediaFormats) {
 					const value = _.find(studio.config, (c) => c._id === 'mediaResolutions')
 					if (value) {
@@ -101,11 +105,10 @@ addMigrationSteps('1.0.0', [
 			})
 		},
 	},
-	ensureCollectionProperty(
+	ensureCollectionPropertyManual(
 		'Studios',
 		{},
 		'settings.supportedMediaFormats',
-		null,
 		'text',
 		'Studio config: mediaResolutions',
 		'A set of accepted media formats for playback (example: "1920x1080i5000tff,1280x720p5000")',
@@ -120,7 +123,8 @@ addMigrationSteps('1.0.0', [
 		dependOnResultFrom: 'Studios rename config',
 		validate: () => {
 			let validate: boolean | string = false
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.supportedAudioStreams) {
 					if (_.find(studio.config, (c) => c._id === 'audioStreams')) {
 						validate = `supportedAudioStreams not set on studio ${studio._id}`
@@ -130,7 +134,8 @@ addMigrationSteps('1.0.0', [
 			return validate
 		},
 		migrate: () => {
-			Studios.find().forEach((studio) => {
+			Studios.find().forEach((studio0) => {
+				const studio = (studio0 as any) as Studio_1_10_0
 				if (!studio.settings || !studio.settings.supportedAudioStreams) {
 					const value = _.find(studio.config, (c) => c._id === 'audioStreams')
 					if (value) {

@@ -1,16 +1,17 @@
-import { PieceGeneric, PieceId } from './Pieces'
+import { PieceId } from './Pieces'
 import { TransformedCollection } from '../typings/meteor'
-import { registerCollection, ProtectedString } from '../lib'
-import { Meteor } from 'meteor/meteor'
-import { IBlueprintAdLibPiece, BaseContent } from 'tv-automation-sofie-blueprints-integration'
+import { registerCollection } from '../lib'
+import { IBlueprintAdLibPiece } from '@sofie-automation/blueprints-integration'
 import { createMongoCollection } from './lib'
 import { RundownImportVersions } from './Rundowns'
 import { StudioId } from './Studios'
 import { ShowStyleVariantId } from './ShowStyleVariants'
 import { BucketId } from './Buckets'
+import { registerIndex } from '../database'
 
+export type BucketAdLibId = PieceId
 export interface BucketAdLib extends IBlueprintAdLibPiece {
-	_id: PieceId
+	_id: BucketAdLibId
 	bucketId: BucketId
 
 	/**
@@ -26,11 +27,8 @@ export const BucketAdLibs: TransformedCollection<BucketAdLib, BucketAdLib> = cre
 	'bucketAdlibs'
 )
 registerCollection('BucketAdLibs', BucketAdLibs)
-Meteor.startup(() => {
-	if (Meteor.isServer) {
-		BucketAdLibs._ensureIndex({
-			bucketId: 1,
-			studioId: 1,
-		})
-	}
+
+registerIndex(BucketAdLibs, {
+	bucketId: 1,
+	studioId: 1,
 })

@@ -12,7 +12,7 @@ import { Blueprints } from '../../../lib/collections/Blueprints'
 import {
 	ConfigManifestEntry,
 	ConfigManifestEntryType,
-	IConfigItem,
+	IBlueprintConfig,
 	BasicConfigManifestEntry,
 	ConfigManifestEntryEnum,
 	ConfigItemValue,
@@ -22,8 +22,8 @@ import {
 	ConfigManifestEntryLayerMappings,
 	SourceLayerType,
 	ConfigManifestEntrySelectFromOptions,
-} from 'tv-automation-sofie-blueprints-integration'
-import { literal, DBObj, KeysByType, ProtectedString } from '../../../lib/lib'
+} from '@sofie-automation/blueprints-integration'
+import { literal, DBObj, KeysByType, ProtectedString, objectPathGet } from '../../../lib/lib'
 import { ShowStyleBase, ShowStyleBases } from '../../../lib/collections/ShowStyleBases'
 import { ShowStyleVariant } from '../../../lib/collections/ShowStyleVariants'
 import { logger } from '../../../lib/logging'
@@ -48,7 +48,7 @@ import { NotificationCenter, NoticeLevel, Notification } from '../../lib/notific
 function filterSourceLayers(
 	select: ConfigManifestEntrySourceLayers<true | false>,
 	layers: Array<{ name: string; value: string; type: SourceLayerType }>
-) {
+): Array<{ name: string; value: string; type: SourceLayerType }> {
 	if (select.filters && select.filters.sourceLayerTypes) {
 		const sourceLayerTypes = select.filters.sourceLayerTypes
 		return _.filter(layers, (layer) => {
@@ -62,21 +62,19 @@ function filterSourceLayers(
 function filterLayerMappings(
 	select: ConfigManifestEntryLayerMappings<true | false>,
 	mappings: { [key: string]: MappingsExt }
-) {
-	if (select.filters && select.filters.deviceTypes) {
-		const deviceTypes = select.filters.deviceTypes
-		return _.mapObject(mappings, (studioMappings) => {
-			return Object.keys(
-				_.pick(studioMappings, (mapping) => {
-					return deviceTypes.includes(mapping.device)
-				})
-			)
-		})
-	} else {
-		return _.mapObject(mappings, (studioMappings) => {
-			return Object.keys(studioMappings)
-		})
+): Array<{ name: string; value: string }> {
+	const deviceTypes = select.filters?.deviceTypes
+	const result: Array<{ name: string; value: string }> = []
+
+	for (const studioMappings of Object.values(mappings)) {
+		for (const [layerId, mapping] of Object.entries(studioMappings)) {
+			if (!deviceTypes || deviceTypes.includes(mapping.device)) {
+				result.push({ name: mapping.layerName || layerId, value: layerId })
+			}
+		}
 	}
+
+	return result
 }
 
 function getEditAttribute<DBInterface extends { _id: ProtectedString<any> }, DocClass extends DBInterface>(
@@ -121,6 +119,32 @@ function getEditAttribute<DBInterface extends { _id: ProtectedString<any> }, Doc
 					attribute={attribute}
 					obj={object}
 					type="int"
+					collection={collection}
+					className="input text-input input-m"
+					mutateDisplayValue={(v) => (item.zeroBased ? v + 1 : v)}
+					mutateUpdateValue={(v) => (item.zeroBased ? v - 1 : v)}
+				/>
+			)
+		case ConfigManifestEntryType.INT:
+			return (
+				<EditAttribute
+					modifiedClassName="bghl"
+					attribute={attribute}
+					obj={object}
+					type="int"
+					collection={collection}
+					className="input text-input input-m"
+					mutateDisplayValue={(v) => (item.zeroBased ? v + 1 : v)}
+					mutateUpdateValue={(v) => (item.zeroBased ? v - 1 : v)}
+				/>
+			)
+		case ConfigManifestEntryType.FLOAT:
+			return (
+				<EditAttribute
+					modifiedClassName="bghl"
+					attribute={attribute}
+					obj={object}
+					type="float"
 					collection={collection}
 					className="input text-input input-m"
 				/>
@@ -220,7 +244,7 @@ interface IConfigManifestSettingsProps<
 
 	collection: TCol
 	object: DBInterface
-	configPath: KeysByType<DBInterface, Array<IConfigItem>>
+	configPath: string
 
 	layerMappings?: { [key: string]: MappingsExt }
 	sourceLayers?: Array<{ name: string; value: string; type: SourceLayerType }>
@@ -444,7 +468,8 @@ export class ConfigManifestTable<
 													className={ClassNames('action-btn', {
 														disabled: this.state.sortColumn !== i,
 													})}
-													onClick={() => this.sort(i)}>
+													onClick={() => this.sort(i)}
+												>
 													<FontAwesomeIcon
 														icon={
 															this.state.sortColumn === i
@@ -482,7 +507,8 @@ export class ConfigManifestTable<
 											className={ClassNames('btn btn-danger', {
 												'btn-tight': this.props.subPanel,
 											})}
-											onClick={() => this.removeRow(val._id, baseAttribute)}>
+											onClick={() => this.removeRow(val._id, baseAttribute)}
+										>
 											<FontAwesomeIcon icon={faTrash} />
 										</button>
 									</td>
@@ -495,14 +521,16 @@ export class ConfigManifestTable<
 					className={ClassNames('btn btn-primary', {
 						'btn-tight': this.props.subPanel,
 					})}
-					onClick={() => this.addRow(configEntry, baseAttribute)}>
+					onClick={() => this.addRow(configEntry, baseAttribute)}
+				>
 					<FontAwesomeIcon icon={faPlus} />
 				</button>
 				<button
 					className={ClassNames('btn mlm btn-secondary', {
 						'btn-tight': this.props.subPanel,
 					})}
-					onClick={() => this.exportJSON(configEntry, vals)}>
+					onClick={() => this.exportJSON(configEntry, vals)}
+				>
 					<FontAwesomeIcon icon={faDownload} />
 					&nbsp;{t('Export')}
 				</button>
@@ -512,7 +540,8 @@ export class ConfigManifestTable<
 					})}
 					accept="application/json,.json"
 					onChange={(e) => this.importJSON(e, configEntry, baseAttribute)}
-					key={this.state.uploadFileKey}>
+					key={this.state.uploadFileKey}
+				>
 					<FontAwesomeIcon icon={faUpload} />
 					&nbsp;{t('Import')}
 				</UploadButton>
@@ -542,7 +571,7 @@ export class ConfigManifestSettings<
 		}
 	}
 
-	getObjectConfig(): Array<IConfigItem> {
+	getObjectConfig(): IBlueprintConfig {
 		return this.props.object[this.props.configPath]
 	}
 
@@ -565,19 +594,19 @@ export class ConfigManifestSettings<
 	}
 
 	createItem = (item: ConfigManifestEntry) => {
-		const m: any = {}
-		m[this.props.configPath] = literal<IConfigItem>({
-			_id: item.id,
-			value: item.defaultVal,
-		})
-		this.updateObject(this.props.object, { $push: m })
+		const m: any = {
+			$set: {
+				[`${this.props.configPath}.${item.id}`]: item.defaultVal,
+			},
+		}
+		this.updateObject(this.props.object, m)
 	}
 
 	editItem = (item: ConfigManifestEntry) => {
 		// Ensure the item exists, so edit by index works
-		const valIndex = this.getObjectConfig().findIndex((v) => v._id === item.id)
+		const val = objectPathGet(this.getObjectConfig(), item.id)
 
-		if (valIndex === -1) throw new Meteor.Error(500, `Unable to edit an item that doesn't exist`)
+		if (val === undefined) throw new Meteor.Error(500, `Unable to edit an item that doesn't exist`)
 
 		if (this.state.editedItems.indexOf(item.id) < 0) {
 			this.state.editedItems.push(item.id)
@@ -609,12 +638,12 @@ export class ConfigManifestSettings<
 	handleConfirmAddItemAccept = (e) => {
 		if (this.state.addItemId) {
 			const item = this.props.manifest.find((c) => c.id === this.state.addItemId)
-			const m: any = {}
-			m[this.props.configPath] = literal<IConfigItem>({
-				_id: this.state.addItemId,
-				value: item ? item.defaultVal : '',
-			})
-			this.updateObject(this.props.object, { $push: m })
+			const m: any = {
+				$set: {
+					[`${this.props.configPath}.${this.state.addItemId}`]: item ? item.defaultVal : '',
+				},
+			}
+			this.updateObject(this.props.object, m)
 		}
 
 		this.setState({
@@ -640,11 +669,12 @@ export class ConfigManifestSettings<
 
 	handleConfirmDeleteAccept = (e) => {
 		if (this.state.deleteConfirmItem) {
-			const m: any = {}
-			m[this.props.configPath] = {
-				_id: this.state.deleteConfirmItem.id,
+			const m: any = {
+				$unset: {
+					[`${this.props.configPath}.${this.state.deleteConfirmItem.id}`]: '',
+				},
 			}
-			this.updateObject(this.props.object, { $pull: m })
+			this.updateObject(this.props.object, m)
 		}
 
 		this.setState({
@@ -658,11 +688,13 @@ export class ConfigManifestSettings<
 
 		const value = rawValue === undefined ? item.defaultVal : rawValue
 
+		const rawValueArr = rawValue as any[]
+
 		switch (item.type) {
 			case ConfigManifestEntryType.BOOLEAN:
 				return value ? t('true') : t('false')
 			case ConfigManifestEntryType.TABLE:
-				return t('{{count}} rows', { count: ((rawValue as any[]) || []).length })
+				return t('{{count}} rows', { count: (rawValueArr || []).length })
 			case ConfigManifestEntryType.SELECT:
 			case ConfigManifestEntryType.LAYER_MAPPINGS:
 			case ConfigManifestEntryType.SOURCE_LAYERS:
@@ -677,13 +709,16 @@ export class ConfigManifestSettings<
 				) : (
 					value.toString()
 				)
+			case ConfigManifestEntryType.NUMBER:
+			case ConfigManifestEntryType.INT:
+				return _.isNumber(value) && item.zeroBased ? (value + 1).toString() : value.toString()
 			default:
 				return value.toString()
 		}
 	}
 
-	renderEditableArea(item: ConfigManifestEntry, valIndex: number) {
-		const baseAttribute = `config.${valIndex}.value`
+	renderEditableArea(item: ConfigManifestEntry, valIndex: string) {
+		const baseAttribute = `blueprintConfig.${valIndex}`
 		const { t, collection, object, i18n, tReady } = this.props
 		switch (item.type) {
 			case ConfigManifestEntryType.TABLE:
@@ -739,23 +774,22 @@ export class ConfigManifestSettings<
 
 		const values = this.getObjectConfig()
 		return this.props.manifest.map((item, index) => {
-			const valIndex = values.findIndex((v) => v._id === item.id)
-			if (valIndex === -1 && !item.required) return undefined
-
-			const configItem = values[valIndex]
+			const configItem = objectPathGet(values, item.id)
+			if (configItem === undefined && !item.required) return undefined
 
 			return (
 				<React.Fragment key={`${item.id}`}>
 					<tr
 						className={ClassNames({
 							hl: this.isItemEdited(item),
-						})}>
+						})}
+					>
 						<th className="settings-studio-custom-config-table__name c2">{item.name}</th>
 						<td className="settings-studio-custom-config-table__value c3">
-							{this.renderConfigValue(item, configItem ? configItem.value : undefined)}
+							{this.renderConfigValue(item, configItem)}
 						</td>
 						<td className="settings-studio-custom-config-table__actions table-item-actions c3">
-							{configItem ? (
+							{configItem !== undefined ? (
 								<React.Fragment>
 									<button className="action-btn" onClick={(e) => this.editItem(item)}>
 										<FontAwesomeIcon icon={faPencilAlt} />
@@ -771,7 +805,8 @@ export class ConfigManifestSettings<
 									className={ClassNames('btn btn-primary', {
 										'btn-tight': this.props.subPanel,
 									})}
-									onClick={(e) => this.createItem(item)}>
+									onClick={(e) => this.createItem(item)}
+								>
 									<FontAwesomeIcon icon={faPlus} /> {t('Create')}
 								</button>
 							)}
@@ -784,7 +819,7 @@ export class ConfigManifestSettings<
 									<div className="mod mvs mhs">
 										<label className="field">{item.description}</label>
 									</div>
-									<div className="mod mvs mhs">{this.renderEditableArea(item, valIndex)}</div>
+									<div className="mod mvs mhs">{this.renderEditableArea(item, item.id)}</div>
 								</div>
 								<div className="mod alright">
 									<button className={ClassNames('btn btn-primary')} onClick={(e) => this.finishEditItem(item)}>
@@ -800,12 +835,11 @@ export class ConfigManifestSettings<
 	}
 
 	getAddOptions() {
-		let existingIds: string[] = []
 		let addOptions: { value: string; name: string }[] = []
-		existingIds = this.getObjectConfig().map((c) => c._id)
+		const config = this.getObjectConfig()
 		addOptions = this.props.manifest.map((c) => ({ value: c.id, name: c.name }))
 
-		return addOptions.filter((o) => existingIds.indexOf(o.value) === -1)
+		return addOptions.filter((o) => objectPathGet(config, o.value) === undefined)
 	}
 
 	render() {
@@ -818,7 +852,8 @@ export class ConfigManifestSettings<
 					secondaryText={t('Cancel')}
 					show={this.state.showAddItem}
 					onAccept={(e) => this.handleConfirmAddItemAccept(e)}
-					onSecondary={(e) => this.handleConfirmAddItemCancel(e)}>
+					onSecondary={(e) => this.handleConfirmAddItemCancel(e)}
+				>
 					<div className="mod mvs mhs">
 						<label className="field">
 							{t('Item')}
@@ -840,7 +875,8 @@ export class ConfigManifestSettings<
 					secondaryText={t('Cancel')}
 					show={this.state.showDeleteConfirm}
 					onAccept={(e) => this.handleConfirmDeleteAccept(e)}
-					onSecondary={(e) => this.handleConfirmDeleteCancel(e)}>
+					onSecondary={(e) => this.handleConfirmDeleteCancel(e)}
+				>
 					<p>
 						{t('Are you sure you want to delete this config item "{{configId}}"?', {
 							configId: this.state.deleteConfirmItem && this.state.deleteConfirmItem.name,
@@ -861,11 +897,13 @@ export class ConfigManifestSettings<
 						className={ClassNames('btn btn-primary', {
 							'btn-tight': this.props.subPanel,
 						})}
-						onClick={this.addConfigItem}>
+						onClick={this.addConfigItem}
+					>
 						<Tooltip
 							overlay={t('More settings specific to this studio can be found here')}
 							visible={getHelpMode()}
-							placement="right">
+							placement="right"
+						>
 							<FontAwesomeIcon icon={faPlus} />
 						</Tooltip>
 					</button>

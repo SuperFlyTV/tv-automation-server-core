@@ -1,13 +1,13 @@
 import { TransformedCollection } from '../typings/meteor'
 import { Time, registerCollection, ProtectedString, ProtectedStringProperties } from '../lib'
-import { Meteor } from 'meteor/meteor'
 import {
 	IBlueprintExternalMessageQueueObj,
 	IBlueprintExternalMessageQueueType,
-} from 'tv-automation-sofie-blueprints-integration'
+} from '@sofie-automation/blueprints-integration'
 import { createMongoCollection } from './lib'
 import { StudioId } from './Studios'
 import { RundownId } from './Rundowns'
+import { registerIndex } from '../database'
 
 /** A string, identifying a ExternalMessageQueueObj */
 export type ExternalMessageQueueObjId = ProtectedString<'ExternalMessageQueueObjId'>
@@ -61,19 +61,16 @@ export const ExternalMessageQueue: TransformedCollection<
 	ExternalMessageQueueObj
 > = createMongoCollection<ExternalMessageQueueObj>('externalMessageQueue')
 registerCollection('ExternalMessageQueue', ExternalMessageQueue)
-Meteor.startup(() => {
-	if (Meteor.isServer) {
-		ExternalMessageQueue._ensureIndex({
-			studioId: 1,
-			created: 1,
-		})
-		ExternalMessageQueue._ensureIndex({
-			sent: 1,
-			lastTry: 1,
-		})
-		ExternalMessageQueue._ensureIndex({
-			studioId: 1,
-			rundownId: 1,
-		})
-	}
+
+registerIndex(ExternalMessageQueue, {
+	studioId: 1,
+	created: 1,
+})
+registerIndex(ExternalMessageQueue, {
+	sent: 1,
+	lastTry: 1,
+})
+registerIndex(ExternalMessageQueue, {
+	studioId: 1,
+	rundownId: 1,
 })

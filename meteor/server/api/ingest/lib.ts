@@ -1,25 +1,26 @@
 import { Meteor } from 'meteor/meteor'
-import { getHash, getCurrentTime, protectString, unprotectObject } from '../../../lib/lib'
-import { Studio, Studios } from '../../../lib/collections/Studios'
+import { getHash, getCurrentTime, protectString, unprotectObject, clone, isProtectedString } from '../../../lib/lib'
+import { Studio, StudioId, Studios } from '../../../lib/collections/Studios'
 import {
 	PeripheralDevice,
 	PeripheralDevices,
 	getStudioIdFromDevice,
 	PeripheralDeviceId,
 } from '../../../lib/collections/PeripheralDevices'
-import { Rundowns, Rundown, RundownId } from '../../../lib/collections/Rundowns'
+import { Rundown, RundownId } from '../../../lib/collections/Rundowns'
 import { logger } from '../../logging'
 import { PeripheralDeviceAPI } from '../../../lib/api/peripheralDevice'
-import { RundownPlaylist, RundownPlaylists } from '../../../lib/collections/RundownPlaylists'
-import { SegmentId, Segment, Segments } from '../../../lib/collections/Segments'
+import { SegmentId, Segment } from '../../../lib/collections/Segments'
 import { PartId } from '../../../lib/collections/Parts'
 import { PeripheralDeviceContentWriteAccess } from '../../security/peripheralDevice'
 import { MethodContext } from '../../../lib/api/methods'
-import { CacheForRundownPlaylist } from '../../DatabaseCaches'
-import { touchRundownPlaylistsInCache } from '../playout/lib'
 import { Credentials } from '../../security/lib/credentials'
-import { IngestRundown, ExtendedIngestRundown, IBlueprintRundown } from 'tv-automation-sofie-blueprints-integration'
+import { IngestRundown, ExtendedIngestRundown } from '@sofie-automation/blueprints-integration'
 import { ShowStyleBase } from '../../../lib/collections/ShowStyleBases'
+import { profiler } from '../profiler'
+import { ReadonlyDeep } from 'type-fest'
+import { ReadOnlyCache } from '../../cache/CacheBase'
+import { CacheForIngest } from './cache'
 
 /** Check Access and return PeripheralDevice, throws otherwise */
 export function checkAccessAndGetPeripheralDevice(
@@ -27,17 +28,24 @@ export function checkAccessAndGetPeripheralDevice(
 	token: string | undefined,
 	context: Credentials | MethodContext
 ): PeripheralDevice {
-	const access = PeripheralDeviceContentWriteAccess.peripheralDevice({ userId: context.userId, token }, deviceId)
-	const peripheralDevice = access.device
-	if (!peripheralDevice) throw new Meteor.Error(404, `PeripheralDevice "${deviceId}" not found`)
+	const span = profiler.startSpan('lib.checkAccessAndGetPeripheralDevice')
 
+	const { device: peripheralDevice } = PeripheralDeviceContentWriteAccess.peripheralDevice(
+		{ userId: context.userId, token },
+		deviceId
+	)
+	if (!peripheralDevice) {
+		throw new Meteor.Error(404, `PeripheralDevice "${deviceId}" not found`)
+	}
+
+	span?.end()
 	return peripheralDevice
 }
 
-export function getRundownId(studio: Studio, rundownExternalId: string): RundownId {
+export function getRundownId(studio: ReadonlyDeep<Studio> | StudioId, rundownExternalId: string): RundownId {
 	if (!studio) throw new Meteor.Error(500, 'getRundownId: studio not set!')
 	if (!rundownExternalId) throw new Meteor.Error(401, 'getRundownId: rundownExternalId must be set!')
-	return protectString<RundownId>(getHash(`${studio._id}_${rundownExternalId}`))
+	return protectString<RundownId>(getHash(`${isProtectedString(studio) ? studio : studio._id}_${rundownExternalId}`))
 }
 export function getSegmentId(rundownId: RundownId, segmentExternalId: string): SegmentId {
 	if (!rundownId) throw new Meteor.Error(401, 'getSegmentId: rundownId must be set!')
@@ -51,6 +59,8 @@ export function getPartId(rundownId: RundownId, partExternalId: string): PartId 
 }
 
 export function getStudioFromDevice(peripheralDevice: PeripheralDevice): Studio {
+	const span = profiler.startSpan('mosDevice.lib.getStudioFromDevice')
+
 	const studioId = getStudioIdFromDevice(peripheralDevice)
 	if (!studioId) throw new Meteor.Error(500, 'PeripheralDevice "' + peripheralDevice._id + '" has no Studio')
 
@@ -58,25 +68,17 @@ export function getStudioFromDevice(peripheralDevice: PeripheralDevice): Studio 
 
 	const studio = Studios.findOne(studioId)
 	if (!studio) throw new Meteor.Error(404, `Studio "${studioId}" of device "${peripheralDevice._id}" not found`)
+
+	span?.end()
 	return studio
 }
-export function getRundownPlaylist(rundown: Rundown): RundownPlaylist {
-	const playlist = RundownPlaylists.findOne(rundown.playlistId)
-	if (!playlist)
-		throw new Meteor.Error(500, `Rundown playlist "${rundown.playlistId}" of rundown "${rundown._id}" not found!`)
-	playlist.touch()
-	return playlist
-}
-export function getRundown(rundownId: RundownId, externalRundownId: string): Rundown {
-	const rundown = Rundowns.findOne(rundownId)
-	if (!rundown) throw new Meteor.Error(404, `Rundown "${rundownId}" ("${externalRundownId}") not found`)
-	rundown.touch()
+export function getRundown(cache: ReadOnlyCache<CacheForIngest> | CacheForIngest): ReadonlyDeep<Rundown> {
+	const rundown = cache.Rundown.doc
+	if (!rundown) {
+		const rundownId = getRundownId(cache.Studio.doc, cache.RundownExternalId)
+		throw new Meteor.Error(404, `Rundown "${rundownId}" ("${cache.RundownExternalId}") not found`)
+	}
 	return rundown
-}
-export function getSegment(segmentId: SegmentId): Segment {
-	const segment = Segments.findOne(segmentId)
-	if (!segment) throw new Meteor.Error(404, `Segment "${segmentId}" not found`)
-	return segment
 }
 export function getPeripheralDeviceFromRundown(rundown: Rundown): PeripheralDevice {
 	if (!rundown.peripheralDeviceId)
@@ -104,29 +106,39 @@ function updateDeviceLastDataReceived(deviceId: PeripheralDeviceId) {
 	})
 }
 
-export function canBeUpdated(rundown: Rundown | undefined, segment?: Segment, _partId?: PartId) {
+export function canRundownBeUpdated(rundown: ReadonlyDeep<Rundown> | undefined, isCreateAction: boolean): boolean {
 	if (!rundown) return true
-	if (rundown.unsynced) {
+	if (rundown.orphaned && !isCreateAction) {
 		logger.info(`Rundown "${rundown._id}" has been unsynced and needs to be synced before it can be updated.`)
+		return false
+	}
+	return true
+}
+export function canSegmentBeUpdated(
+	rundown: ReadonlyDeep<Rundown> | undefined,
+	segment: ReadonlyDeep<Segment> | undefined,
+	isCreateAction: boolean
+): boolean {
+	if (!canRundownBeUpdated(rundown, false)) {
 		return false
 	}
 
 	if (!segment) return true
-	if (segment.unsynced) {
+	if (segment.orphaned && !isCreateAction) {
 		logger.info(`Segment "${segment._id}" has been unsynced and needs to be synced before it can be updated.`)
 		return false
 	}
 
-	// TODO
 	return true
 }
+
 export function extendIngestRundownCore(
 	ingestRundown: IngestRundown,
-	existingDbRundown: Rundown | undefined
+	existingDbRundown: ReadonlyDeep<Rundown> | undefined
 ): ExtendedIngestRundown {
 	const extendedIngestRundown: ExtendedIngestRundown = {
 		...ingestRundown,
-		coreData: unprotectObject(existingDbRundown),
+		coreData: unprotectObject(clone(existingDbRundown)),
 	}
 	return extendedIngestRundown
 }

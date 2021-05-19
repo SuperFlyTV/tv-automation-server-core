@@ -1,5 +1,4 @@
 import * as mousetrap from 'mousetrap'
-import * as _ from 'underscore'
 import { isEventInInputField } from './lib'
 import { isModalShowing } from './ModalDialog'
 
@@ -15,11 +14,10 @@ export namespace mousetrapHelper {
 		[key: string]: IWrappedCallback[]
 	} = {}
 
-	function handleKey(keys: string, e: ExtendedKeyboardEvent) {
+	function handleKey(keys: string, e: mousetrap.ExtendedKeyboardEvent) {
 		if (_boundHotkeys[keys] === undefined) {
 			return
 		}
-		// console.log(`Handling key combo "${keys}"`)
 		_boundHotkeys[keys].forEach((handler) => {
 			if (!handler.isGlobal && isEventInInputField(e)) return
 			e.preventDefault()
@@ -46,13 +44,12 @@ export namespace mousetrapHelper {
 			if (_boundHotkeys[index] === undefined) _boundHotkeys[index] = []
 			mousetrap.bindGlobal(
 				keys,
-				(e: ExtendedKeyboardEvent) => {
+				(e: mousetrap.ExtendedKeyboardEvent) => {
 					handleKey(index, e)
 				},
 				action
 			)
 		}
-		// console.log(`Registering callback for key combo "${keys}"`)
 
 		_boundHotkeys[index].push({
 			isGlobal: true,
@@ -75,13 +72,12 @@ export namespace mousetrapHelper {
 			_boundHotkeys[index] = []
 			mousetrap.bind(
 				keys,
-				(e: ExtendedKeyboardEvent) => {
+				(e: mousetrap.ExtendedKeyboardEvent) => {
 					handleKey(index, e)
 				},
 				action
 			)
 		}
-		// console.log(`Registering callback for key combo "${keys}"`)
 
 		_boundHotkeys[index].push({
 			isGlobal: false,

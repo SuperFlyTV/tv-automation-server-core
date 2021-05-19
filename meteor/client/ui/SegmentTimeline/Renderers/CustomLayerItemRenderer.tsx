@@ -5,7 +5,7 @@ import { ISourceLayerUi, IOutputLayerUi, PartUi, PieceUi } from '../SegmentTimel
 import { RundownUtils } from '../../../lib/rundown'
 import { faCut } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { PieceLifespan, VTContent } from 'tv-automation-sofie-blueprints-integration'
+import { PieceLifespan, VTContent } from '@sofie-automation/blueprints-integration'
 import { OffsetPosition } from '../../../utils/positions'
 
 export interface ICustomLayerItemProps {
@@ -13,8 +13,12 @@ export interface ICustomLayerItemProps {
 	typeClass?: string
 	layer: ISourceLayerUi
 	outputLayer: IOutputLayerUi
+	outputGroupCollapsed: boolean
 	part: PartUi
+	isLiveLine: boolean
+	partStartsAt: number
 	partDuration: number // 0 if unknown
+	partExpectedDuration: number
 	piece: PieceUi
 	timeScale: number
 	onFollowLiveLine?: (state: boolean, event: any) => void
@@ -27,9 +31,10 @@ export interface ICustomLayerItemProps {
 	elementPosition: OffsetPosition
 	cursorPosition: OffsetPosition
 	cursorTimePosition: number
-	getItemLabelOffsetLeft?: () => { [key: string]: string }
-	getItemLabelOffsetRight?: () => { [key: string]: string }
-	getItemDuration?: () => number
+	layerIndex: number
+	getItemLabelOffsetLeft?: () => React.CSSProperties
+	getItemLabelOffsetRight?: () => React.CSSProperties
+	getItemDuration?: (returnInfinite?: boolean) => number
 	setAnchoredElsWidths?: (rightAnchoredWidth: number, leftAnchoredWidth: number) => void
 }
 export interface ISourceLayerItemState {}
@@ -38,9 +43,7 @@ export class CustomLayerItemRenderer<
 	IProps extends ICustomLayerItemProps,
 	IState extends ISourceLayerItemState
 > extends React.Component<ICustomLayerItemProps & IProps, ISourceLayerItemState & IState> {
-	overflowsTime: boolean
-
-	getItemLabelOffsetLeft(): { [key: string]: string } {
+	getItemLabelOffsetLeft(): React.CSSProperties {
 		if (this.props.getItemLabelOffsetLeft && typeof this.props.getItemLabelOffsetLeft === 'function') {
 			return this.props.getItemLabelOffsetLeft()
 		} else {
@@ -48,7 +51,7 @@ export class CustomLayerItemRenderer<
 		}
 	}
 
-	getItemLabelOffsetRight(): { [key: string]: string } {
+	getItemLabelOffsetRight(): React.CSSProperties {
 		if (this.props.getItemLabelOffsetRight && typeof this.props.getItemLabelOffsetRight === 'function') {
 			return this.props.getItemLabelOffsetRight()
 		} else {
@@ -56,18 +59,16 @@ export class CustomLayerItemRenderer<
 		}
 	}
 
-	getFloatingInspectorStyle(): {
-		[key: string]: string
-	} {
+	getFloatingInspectorStyle(): React.CSSProperties {
 		return {
 			left: (this.props.elementPosition.left + this.props.cursorPosition.left).toString() + 'px',
 			top: this.props.elementPosition.top + 'px',
 		}
 	}
 
-	getItemDuration(): number {
+	getItemDuration(returnInfinite?: boolean): number {
 		if (typeof this.props.getItemDuration === 'function') {
-			return this.props.getItemDuration()
+			return this.props.getItemDuration(returnInfinite)
 		}
 		return this.props.partDuration
 	}
@@ -84,12 +85,18 @@ export class CustomLayerItemRenderer<
 
 		const vtContent = innerPiece.content as VTContent | undefined
 		if (
-			!innerPiece.playoutDuration &&
 			vtContent &&
 			vtContent.sourceDuration &&
-			(uiPiece.renderedInPoint || 0) + vtContent.sourceDuration > (this.props.partDuration || 0)
+			(uiPiece.renderedDuration === Number.POSITIVE_INFINITY ||
+				uiPiece.renderedDuration === null ||
+				vtContent.sourceDuration > (uiPiece.renderedDuration || 0))
 		) {
-			let time = (uiPiece.renderedInPoint || 0) + vtContent.sourceDuration - ((this.props.partDuration || 0) as number)
+			let time = 0
+			if (uiPiece.renderedDuration === Number.POSITIVE_INFINITY || uiPiece.renderedDuration === null) {
+				time = (uiPiece.renderedInPoint || 0) + vtContent.sourceDuration - ((this.props.partDuration || 0) as number)
+			} else {
+				time = vtContent.sourceDuration - (uiPiece.renderedDuration || 0)
+			}
 
 			// only display differences greater than 1 second
 			return time > 0 ? time : false
@@ -99,7 +106,12 @@ export class CustomLayerItemRenderer<
 
 	renderOverflowTimeLabel() {
 		const overflowTime = this.doesOverflowTime()
-		if (overflowTime !== false) {
+		if (
+			overflowTime !== false &&
+			(!this.props.part.instance.part.autoNext ||
+				this.props.piece.instance.adLibSourceId !== undefined ||
+				this.props.piece.instance.dynamicallyInserted)
+		) {
 			return (
 				<div className="segment-timeline__piece__label label-overflow-time">
 					{RundownUtils.formatDiffToTimecode(overflowTime, true, false, true)}
@@ -116,15 +128,20 @@ export class CustomLayerItemRenderer<
 		const vtContent = innerPiece.content as VTContent | undefined
 		const seek = vtContent && vtContent.seek ? vtContent.seek : 0
 		if (
-			innerPiece.infiniteMode &&
 			vtContent &&
-			vtContent.sourceDuration &&
+			vtContent.sourceDuration !== undefined &&
+			vtContent.sourceDuration !== 0 &&
 			(this.props.piece.renderedInPoint || 0) + (vtContent.sourceDuration - seek) < (this.props.partDuration || 0)
 		) {
 			return (
 				<div
 					className="segment-timeline__piece__source-finished"
-					style={{ left: ((vtContent.sourceDuration - seek) * this.props.timeScale).toString() + 'px' }}></div>
+					style={{
+						left: this.props.relative
+							? (((vtContent.sourceDuration - seek) / (this.getItemDuration() || 1)) * 100).toString() + '%'
+							: ((vtContent.sourceDuration - seek) * this.props.timeScale).toString() + 'px',
+					}}
+				></div>
 			)
 		}
 		return null
@@ -134,10 +151,9 @@ export class CustomLayerItemRenderer<
 		const uiPiece = this.props.piece
 		const innerPiece = uiPiece.instance.piece
 
-		return innerPiece.infiniteMode &&
-			innerPiece.infiniteMode === PieceLifespan.Infinite &&
-			!innerPiece.playoutDuration &&
-			!innerPiece.userDuration ? (
+		return innerPiece.lifespan === PieceLifespan.OutOnRundownEnd &&
+			!uiPiece.instance.userDuration &&
+			uiPiece.renderedDuration === null ? (
 			<div className="segment-timeline__piece__label label-icon label-infinite-icon">
 				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#ffff00" viewBox="0 0 8 8">
 					<path

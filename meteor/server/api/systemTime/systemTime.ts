@@ -5,6 +5,7 @@ import { systemTime, getCurrentTime } from '../../../lib/lib'
 import { StatusCode, setSystemStatus } from '../../systemStatus/systemStatus'
 import { logger } from '../../logging'
 import { TimeDiff, DiffTimeResult } from '../../../lib/api/peripheralDevice'
+import { env } from 'process'
 
 /** How often the system-time should be updated */
 const UPDATE_SYSTEM_TIME_INTERVAL = 3600 * 1000
@@ -45,6 +46,7 @@ function determineDiffTimeInner(config: Config): Promise<DiffTimeResult> {
 				})
 				.catch((e) => {
 					if (results.length < maxSampleCount) pushTime()
+					else resolve(results)
 				})
 		}
 		pushTime()
@@ -144,11 +146,12 @@ function updateServerTime(retries: number = 0) {
 			// if result.stdDev is less than one frame-time, it should be okay:
 			if (result.stdDev < 1000 / 50) {
 				logger.info(
-					`System time: Setting diff to ${Math.round(result.mean)} ms (std. dev: ${Math.floor(
-						result.stdDev * 10
-					) / 10} ms)`
+					`System time: Setting diff to ${Math.round(result.mean)} ms (std. dev: ${
+						Math.floor(result.stdDev * 10) / 10
+					} ms)`
 				)
 
+				systemTime.hasBeenSet = true
 				systemTime.diff = result.mean
 				systemTime.stdDev = result.stdDev
 				setSystemStatus('systemTime', {
@@ -157,12 +160,13 @@ function updateServerTime(retries: number = 0) {
 				})
 			} else {
 				if (result.stdDev < systemTime.stdDev) {
+					systemTime.hasBeenSet = true
 					systemTime.diff = result.mean
 					systemTime.stdDev = result.stdDev
 				}
-				let message = `Unable to accuire NTP-time with good enough accuracy (standard deviation: ${Math.floor(
-					result.stdDev * 10
-				) / 10} ms)`
+				let message = `Unable to accuire NTP-time with good enough accuracy (standard deviation: ${
+					Math.floor(result.stdDev * 10) / 10
+				} ms)`
 				if (systemTime.stdDev < 200) {
 					setSystemStatus('systemTime', { statusCode: StatusCode.WARNING_MAJOR, messages: [message] })
 				} else {
@@ -181,18 +185,28 @@ function updateServerTime(retries: number = 0) {
 			} else {
 				logger.info('Unable to set system time (' + (err.reason || err) + ')')
 				setSystemStatus('systemTime', {
-					statusCode: StatusCode.BAD,
+					statusCode: systemTime.hasBeenSet ? StatusCode.WARNING_MAJOR : StatusCode.BAD,
 					messages: [`Error message: ${err.toString()}`],
 				})
 			}
 		})
 }
 Meteor.startup(() => {
-	setSystemStatus('systemTime', { statusCode: StatusCode.BAD, messages: ['Starting up...'] })
-	Meteor.setInterval(() => {
-		updateServerTime()
-	}, UPDATE_SYSTEM_TIME_INTERVAL)
-	updateServerTime(5)
+	if (!env.JEST_WORKER_ID) {
+		setSystemStatus('systemTime', { statusCode: StatusCode.BAD, messages: ['Starting up...'] })
+		Meteor.setInterval(() => {
+			updateServerTime()
+		}, UPDATE_SYSTEM_TIME_INTERVAL)
+		updateServerTime(5)
+	} else {
+		systemTime.hasBeenSet = true
+		systemTime.diff = 0
+		systemTime.stdDev = 0
+		setSystemStatus('systemTime', {
+			statusCode: StatusCode.GOOD,
+			messages: [`NTP-time accuracy (standard deviation): 0 ms`],
+		})
+	}
 })
 
 // Example usage:

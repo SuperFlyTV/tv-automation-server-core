@@ -11,9 +11,11 @@ import { PartUi, IOutputLayerUi, ISourceLayerUi, PieceUi } from './SegmentTimeli
 import { SourceLayerItemContainer } from './SourceLayerItemContainer'
 import { Translated } from '../../lib/ReactMeteorData/ReactMeteorData'
 import { unprotectString } from '../../../lib/lib'
+import { Studio } from '../../../lib/collections/Studios'
 
 interface IProps {
 	playlist: RundownPlaylist
+	studio: Studio
 	part?: PartUi
 	outputGroups?: {
 		[key: string]: IOutputLayerUi
@@ -27,7 +29,14 @@ interface IProps {
 	isCollapsed?: boolean
 }
 
-export const SegmentNextPreview = withTranslation()(
+/**
+ * This code is not used anywhere, and it's just saved here, because the idea of a SegmentNextPreview comes up occasionally
+ * and it would be a waste of time to try and dig it out of the darkness of the ages.
+ *
+ * -- Jan Starzak, 2020/11/12
+ */
+
+/* export const SegmentNextPreview = withTranslation()(
 	class SegmentNextPreview extends React.Component<Translated<IProps>> {
 		renderSourceLayers(outputLayer: IOutputLayerUi, layers: ISourceLayerUi[] | undefined) {
 			if (layers) {
@@ -57,7 +66,7 @@ export const SegmentNextPreview = withTranslation()(
 												this.props.part && (
 													<SourceLayerItemContainer
 														key={unprotectString(piece.instance._id)}
-														{...this.props}
+														studio={this.props.studio}
 														// The following code is fine, just withTracker HOC messing with available props
 														isLiveLine={false}
 														isNextLine={false}
@@ -92,13 +101,14 @@ export const SegmentNextPreview = withTranslation()(
 		}
 		renderOutputGroups() {
 			if (this.props.outputGroups) {
-				return _.map(
-					_.filter(this.props.outputGroups, (layer) => {
+				return Object.entries(this.props.outputGroups)
+					.filter(([key, layer]) => {
 						return layer.used ? true : false
-					}).sort((a, b) => {
+					})
+					.sort(([keyA, a], [keyB, b]) => {
 						return a._rank - b._rank
-					}),
-					(layer, id) => {
+					})
+					.map(([id, layer]) => {
 						return (
 							<div
 								className={ClassNames('segment-timeline__output-group', {
@@ -109,8 +119,7 @@ export const SegmentNextPreview = withTranslation()(
 								{this.renderSourceLayers(layer, layer.sourceLayers)}
 							</div>
 						)
-					}
-				)
+					})
 			} else {
 				return null
 			}
@@ -131,4 +140,4 @@ export const SegmentNextPreview = withTranslation()(
 			)
 		}
 	}
-)
+) */

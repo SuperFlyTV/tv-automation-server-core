@@ -1,7 +1,7 @@
-import { Time, literal, protectString } from '../../../lib/lib'
+import { Time, literal, protectString, getRandomId } from '../../../lib/lib'
 import { RundownImportVersions, RundownHoldState, DBRundown } from '../../../lib/collections/Rundowns'
 import { RundownNote } from '../../../lib/api/notes'
-import { TimelinePersistentState } from 'tv-automation-sofie-blueprints-integration'
+import { TimelinePersistentState } from '@sofie-automation/blueprints-integration'
 import { DBRundownPlaylist, RundownPlaylistId } from '../../../lib/collections/RundownPlaylists'
 import { ShowStyleVariantId } from '../../../lib/collections/ShowStyleVariants'
 import { StudioId } from '../../../lib/collections/Studios'
@@ -54,7 +54,7 @@ export function makePlaylistFromRundown_1_0_0(
 	const playlist = literal<DBRundownPlaylist>({
 		_id: newPlaylistId,
 		externalId: rundown.externalId,
-		active: rundown['active'],
+		activationId: rundown['active'] ? getRandomId() : undefined,
 		rehearsal: rundown['rehearsal'],
 		created: rundown.created,
 		currentPartInstanceId: null,
@@ -65,7 +65,6 @@ export function makePlaylistFromRundown_1_0_0(
 		name: rundown.name,
 		nextPartManual: rundown.nextPartManual,
 		nextTimeOffset: rundown.nextTimeOffset,
-		peripheralDeviceId: rundown.peripheralDeviceId,
 		previousPartInstanceId: null,
 		startedPlayback: rundown.startedPlayback,
 		studioId: rundown.studioId,

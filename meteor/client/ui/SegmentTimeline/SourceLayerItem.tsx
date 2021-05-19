@@ -2,7 +2,7 @@ import * as React from 'react'
 import * as _ from 'underscore'
 import { ISourceLayerUi, IOutputLayerUi, PartUi, PieceUi } from './SegmentTimelineContainer'
 import { RundownAPI } from '../../../lib/api/rundown'
-import { SourceLayerType, PieceLifespan, PieceTransitionType } from 'tv-automation-sofie-blueprints-integration'
+import { SourceLayerType, PieceLifespan, PieceTransitionType } from '@sofie-automation/blueprints-integration'
 import { RundownUtils } from '../../lib/rundown'
 import ClassNames from 'classnames'
 import { DefaultLayerItemRenderer } from './Renderers/DefaultLayerItemRenderer'
@@ -14,14 +14,12 @@ import { SplitsSourceRenderer } from './Renderers/SplitsSourceRenderer'
 import { TransitionSourceRenderer } from './Renderers/TransitionSourceRenderer'
 
 import { DEBUG_MODE } from './SegmentTimelineDebugMode'
-import { doModalDialog, SomeEvent, ModalInputResult } from '../../lib/ModalDialog'
-import { doUserAction, UserAction } from '../../lib/userAction'
 import { withTranslation, WithTranslation } from 'react-i18next'
 import { getElementWidth } from '../../utils/dimensions'
 import { getElementDocumentOffset, OffsetPosition } from '../../utils/positions'
 import { unprotectString } from '../../../lib/lib'
-import { MeteorCall } from '../../../lib/api/methods'
-import { Rundowns } from '../../../lib/collections/Rundowns'
+import RundownViewEventBus, { RundownViewEvents, HighlightEvent } from '../RundownView/RundownViewEventBus'
+import { Studio } from '../../../lib/collections/Studios'
 
 const LEFT_RIGHT_ANCHOR_SPACER = 15
 
@@ -33,6 +31,7 @@ export interface ISourceLayerItemProps {
 	part: PartUi
 	partStartsAt: number
 	partDuration: number
+	partExpectedDuration: number
 	piece: PieceUi
 	timeScale: number
 	isLiveLine: boolean
@@ -49,6 +48,8 @@ export interface ISourceLayerItemProps {
 	scrollLeft: number
 	scrollWidth: number
 	liveLinePadding: number
+	layerIndex: number
+	studio: Studio | undefined
 }
 interface ISourceLayerItemState {
 	showMiniInspector: boolean
@@ -60,6 +61,7 @@ interface ISourceLayerItemState {
 	itemElement: HTMLDivElement | null
 	leftAnchoredWidth: number
 	rightAnchoredWidth: number
+	highlight: boolean
 }
 export const SourceLayerItem = withTranslation()(
 	class SourceLayerItem extends React.Component<ISourceLayerItemProps & WithTranslation, ISourceLayerItemState> {
@@ -83,6 +85,7 @@ export const SourceLayerItem = withTranslation()(
 				itemElement: null,
 				leftAnchoredWidth: 0,
 				rightAnchoredWidth: 0,
+				highlight: false,
 			}
 		}
 
@@ -92,7 +95,7 @@ export const SourceLayerItem = withTranslation()(
 			})
 		}
 
-		getItemLabelOffsetLeft = (): { [key: string]: string } => {
+		getItemLabelOffsetLeft = (): React.CSSProperties => {
 			if (this.props.relative) {
 				return {}
 			} else {
@@ -122,7 +125,7 @@ export const SourceLayerItem = withTranslation()(
 						this.state.rightAnchoredWidth > 0 &&
 						this.state.leftAnchoredWidth + this.state.rightAnchoredWidth > this.state.elementWidth
 
-					const nextIsTouching = !!(piece.cropped || (innerPiece.enable.end && _.isString(innerPiece.enable.end)))
+					const nextIsTouching = !!piece.cropped
 
 					if (this.props.followLiveLine && this.props.isLiveLine) {
 						const liveLineHistoryWithMargin = this.props.liveLineHistorySize - 10
@@ -138,8 +141,6 @@ export const SourceLayerItem = withTranslation()(
 							const targetPos =
 								(this.props.scrollLeft - inPoint - this.props.partStartsAt - inTransitionDuration) *
 								this.props.timeScale
-
-							// console.log(this.state.itemElement)
 
 							// || (this.state.leftAnchoredWidth === 0 || this.state.rightAnchoredWidth === 0)
 							let styleObj = {
@@ -219,7 +220,7 @@ export const SourceLayerItem = withTranslation()(
 							let styleObj = {
 								maxWidth:
 									this.state.rightAnchoredWidth > 0
-										? (this.state.elementWidth - this.state.rightAnchoredWidth).toString() + 'px'
+										? (this.state.elementWidth - this.state.rightAnchoredWidth - 10).toString() + 'px'
 										: maxLabelWidth !== undefined
 										? (maxLabelWidth * this.props.timeScale).toString() + 'px'
 										: nextIsTouching
@@ -244,7 +245,7 @@ export const SourceLayerItem = withTranslation()(
 							let styleObj = {
 								maxWidth:
 									this.state.rightAnchoredWidth > 0
-										? (this.state.elementWidth - this.state.rightAnchoredWidth).toString() + 'px'
+										? (this.state.elementWidth - this.state.rightAnchoredWidth - 10).toString() + 'px'
 										: maxLabelWidth !== undefined
 										? (maxLabelWidth * this.props.timeScale).toString() + 'px'
 										: nextIsTouching
@@ -260,7 +261,7 @@ export const SourceLayerItem = withTranslation()(
 			}
 		}
 
-		getItemLabelOffsetRight = (): { [key: string]: string } => {
+		getItemLabelOffsetRight = (): React.CSSProperties => {
 			if (this.props.relative) {
 				return {}
 			} else {
@@ -277,7 +278,7 @@ export const SourceLayerItem = withTranslation()(
 
 					const inPoint = piece.renderedInPoint || 0
 					const duration =
-						innerPiece.infiniteMode || piece.renderedDuration === 0
+						innerPiece.lifespan !== PieceLifespan.WithinPart || piece.renderedDuration === 0
 							? this.props.partDuration - inPoint
 							: Math.min(piece.renderedDuration || 0, this.props.partDuration - inPoint)
 					const outPoint = inPoint + duration
@@ -313,32 +314,39 @@ export const SourceLayerItem = withTranslation()(
 			}
 		}
 
-		getItemDuration = (): number => {
+		getItemDuration = (returnInfinite?: boolean): number => {
 			const piece = this.props.piece
 			const innerPiece = piece.instance.piece
 
 			const expectedDurationNumber =
 				typeof innerPiece.enable.duration === 'number' ? innerPiece.enable.duration || 0 : 0
-			const userDurationNumber =
-				innerPiece.userDuration && typeof innerPiece.userDuration.duration === 'number'
-					? innerPiece.userDuration.duration || 0
-					: 0
-			let itemDuration = Math.min(
-				innerPiece.playoutDuration || userDurationNumber || piece.renderedDuration || expectedDurationNumber || 0,
-				this.props.partDuration - (piece.renderedInPoint || 0)
-			)
+
+			let itemDuration: number
+			if (!returnInfinite) {
+				itemDuration = Math.min(
+					piece.renderedDuration || expectedDurationNumber || 0,
+					this.props.partDuration - (piece.renderedInPoint || 0)
+				)
+			} else {
+				itemDuration =
+					this.props.partDuration - (piece.renderedInPoint || 0) <
+					(piece.renderedDuration || expectedDurationNumber || 0)
+						? Number.POSITIVE_INFINITY
+						: piece.renderedDuration || expectedDurationNumber || 0
+			}
 
 			if (
-				((innerPiece.infiniteMode !== undefined && innerPiece.infiniteMode !== PieceLifespan.Normal) ||
-					(innerPiece.enable.start !== undefined &&
-						innerPiece.enable.end === undefined &&
-						innerPiece.enable.duration === undefined)) &&
+				(innerPiece.lifespan !== PieceLifespan.WithinPart ||
+					(innerPiece.enable.start !== undefined && innerPiece.enable.duration === undefined)) &&
 				!piece.cropped &&
-				!innerPiece.playoutDuration &&
-				!innerPiece.userDuration
+				piece.renderedDuration === null &&
+				piece.instance.userDuration === undefined
 			) {
-				itemDuration = this.props.partDuration - (piece.renderedInPoint || 0)
-				// console.log(piece.infiniteMode + ', ' + piece.infiniteId)
+				if (!returnInfinite) {
+					itemDuration = this.props.partDuration - (piece.renderedInPoint || 0)
+				} else {
+					itemDuration = Number.POSITIVE_INFINITY
+				}
 			}
 
 			return itemDuration
@@ -444,13 +452,38 @@ export const SourceLayerItem = withTranslation()(
 			}
 		}
 
+		private highlightTimeout: NodeJS.Timer
+
+		private onHighlight = (e: HighlightEvent) => {
+			if (e.partId === this.props.part.partId && e.pieceId === this.props.piece.instance.piece._id) {
+				this.setState({
+					highlight: true,
+				})
+				clearTimeout(this.highlightTimeout)
+				this.highlightTimeout = setTimeout(() => {
+					this.setState({
+						highlight: false,
+					})
+				}, 5000)
+			}
+		}
+
 		componentDidMount() {
 			if (this.props.isLiveLine) {
 				this.mountResizeObserver()
 			}
+
+			RundownViewEventBus.on(RundownViewEvents.HIGHLIGHT, this.onHighlight)
 		}
 
-		componentDidUpdate(prevProps: ISourceLayerItemProps) {
+		componentWillUnmount() {
+			super.componentWillUnmount && super.componentWillUnmount()
+			RundownViewEventBus.off(RundownViewEvents.HIGHLIGHT, this.onHighlight)
+			this.unmountResizeObserver()
+			clearTimeout(this.highlightTimeout)
+		}
+
+		componentDidUpdate(prevProps: ISourceLayerItemProps, prevState: ISourceLayerItemState) {
 			if (prevProps.scrollLeft !== this.props.scrollLeft && this.state.showMiniInspector) {
 				const scrollLeftOffset = this.state.scrollLeftOffset + (this.props.scrollLeft - prevProps.scrollLeft)
 				const cursorTimePosition = this.state.cursorTimePosition + (this.props.scrollLeft - prevProps.scrollLeft)
@@ -475,45 +508,6 @@ export const SourceLayerItem = withTranslation()(
 			e.stopPropagation()
 			this.props.onClick && this.props.onClick(this.props.piece, e)
 		}
-		tempDisplayInOutpoints = (e: React.MouseEvent<HTMLDivElement>) => {
-			// Note: This is a TEMPORARY way to set in & out points, will be replaced with a much nicer looking way at a later stage
-			doModalDialog({
-				title: 'Set in point & duration',
-				message: 'Please set the in-point & duration below',
-				yes: 'Save',
-				no: 'Discard',
-				// acceptOnly?: boolean
-				onAccept: (e: SomeEvent, inputResult: ModalInputResult) => {
-					const rundown = Rundowns.findOne(this.props.part.instance.rundownId)
-					if (!rundown) throw Error(`Rundown ${this.props.part.instance.rundownId} not found (in/out)`)
-
-					doUserAction(this.props.t, e, UserAction.SET_IN_OUT_POINTS, (e) =>
-						MeteorCall.userAction.setInOutPoints(
-							e,
-							rundown.playlistId,
-							this.props.part.instance.part._id,
-							this.props.piece.instance.piece._id,
-							inputResult.inPoint,
-							inputResult.outPoint
-						)
-					)
-				},
-				inputs: {
-					inPoint: {
-						label: 'In point',
-						text: 'In point',
-						type: 'float',
-						defaultValue: 0,
-					},
-					outPoint: {
-						label: 'Out point',
-						text: 'Out point',
-						type: 'float',
-						defaultValue: 0,
-					},
-				},
-			})
-		}
 
 		itemDblClick = (e: React.MouseEvent<HTMLDivElement>) => {
 			e.preventDefault()
@@ -533,11 +527,13 @@ export const SourceLayerItem = withTranslation()(
 			return
 		}
 
+		toggleMiniInspectorOn = (e: React.MouseEvent) => this.toggleMiniInspector(e, true)
+		toggleMiniInspectorOff = (e: React.MouseEvent) => this.toggleMiniInspector(e, false)
+
 		toggleMiniInspector = (e: MouseEvent | any, v: boolean) => {
 			this.setState({
 				showMiniInspector: v,
 			})
-			// console.log($(this.itemElement).offset())
 			const elementPos = getElementDocumentOffset(this.state.itemElement) || {
 				top: 0,
 				left: 0,
@@ -720,30 +716,28 @@ export const SourceLayerItem = withTranslation()(
 								this.state.rightAnchoredWidth > 0 &&
 								this.state.leftAnchoredWidth + this.state.rightAnchoredWidth > this.state.elementWidth,
 
-							infinite: (innerPiece.playoutDuration === undefined &&
-								innerPiece.userDuration === undefined &&
-								innerPiece.infiniteMode) as boolean, // 0 is a special value
-							'next-is-touching': !!(
-								this.props.piece.cropped ||
-								(innerPiece.enable.end && _.isString(innerPiece.enable.end))
-							),
+							infinite: piece.instance.userDuration === undefined && innerPiece.lifespan !== PieceLifespan.WithinPart, // 0 is a special value
+							'next-is-touching': this.props.piece.cropped,
 
 							'source-missing':
 								innerPiece.status === RundownAPI.PieceStatusCode.SOURCE_MISSING ||
 								innerPiece.status === RundownAPI.PieceStatusCode.SOURCE_NOT_SET,
 							'source-broken': innerPiece.status === RundownAPI.PieceStatusCode.SOURCE_BROKEN,
 							'unknown-state': innerPiece.status === RundownAPI.PieceStatusCode.UNKNOWN,
-							disabled: innerPiece.disabled,
+							disabled: piece.instance.disabled,
+
+							'invert-flash': this.state.highlight,
 						})}
 						data-obj-id={piece.instance._id}
 						ref={this.setRef}
 						onClick={this.itemClick}
 						onDoubleClick={this.itemDblClick}
 						onMouseUp={this.itemMouseUp}
-						onMouseMove={(e) => this.moveMiniInspector(e)}
-						onMouseOver={(e) => !this.props.outputGroupCollapsed && this.toggleMiniInspector(e, true)}
-						onMouseLeave={(e) => this.toggleMiniInspector(e, false)}
-						style={this.getItemStyle()}>
+						onMouseMove={this.moveMiniInspector}
+						onMouseEnter={this.toggleMiniInspectorOn}
+						onMouseLeave={this.toggleMiniInspectorOff}
+						style={this.getItemStyle()}
+					>
 						{this.renderInsideItem(typeClass)}
 						{DEBUG_MODE && (
 							<div className="segment-timeline__debug-info">
@@ -790,7 +784,8 @@ export const SourceLayerItem = withTranslation()(
 						className="segment-timeline__piece"
 						data-obj-id={this.props.piece.instance._id}
 						ref={this.setRef}
-						style={this.getItemStyle()}></div>
+						style={this.getItemStyle()}
+					></div>
 				)
 			}
 		}

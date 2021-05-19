@@ -4,7 +4,7 @@ import { ensureHasTrailingSlash } from '../../lib/lib'
 import { translateWithTracker, Translated } from '../../lib/ReactMeteorData/ReactMeteorData'
 import { Pieces, Piece, PieceId } from '../../../lib/collections/Pieces'
 import { PubSub } from '../../../lib/api/pubsub'
-import { VTContent } from 'tv-automation-sofie-blueprints-integration'
+import { VTContent } from '@sofie-automation/blueprints-integration'
 import { VideoEditMonitor } from './VideoEditMonitor'
 import { MediaObjects, MediaObject } from '../../../lib/collections/MediaObjects'
 import { Studio, Studios, StudioId } from '../../../lib/collections/Studios'
@@ -15,7 +15,7 @@ import { PartId } from '../../../lib/collections/Parts'
 import { RundownId } from '../../../lib/collections/Rundowns'
 import { faUndo } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-const Tooltip = require('rc-tooltip')
+import Tooltip from 'rc-tooltip'
 
 export interface IProps {
 	pieceId: PieceId
@@ -54,15 +54,16 @@ type StateChange = Partial<IState>
 export const ClipTrimPanel = translateWithTracker<IProps, IState, ITrackedProps>((props: IProps) => {
 	const piece = Pieces.findOne(props.pieceId)
 	const studio = Studios.findOne(props.studioId)
+	const content = piece?.content as VTContent | undefined
 	return {
 		piece: piece,
-		mediaObject: piece
+		mediaObject: content?.fileName
 			? MediaObjects.findOne({
-					mediaId: (piece.content as VTContent).fileName.toUpperCase(),
+					mediaId: content.fileName.toUpperCase(),
 			  })
 			: undefined,
 		studio: studio,
-		maxDuration: piece ? (piece.content as VTContent).sourceDuration || 0 : 0,
+		maxDuration: content?.sourceDuration || 0,
 	}
 })(
 	class ClipTrimPanel extends MeteorReactComponent<Translated<IProps> & ITrackedProps, IState> {
@@ -90,19 +91,16 @@ export const ClipTrimPanel = translateWithTracker<IProps, IState, ITrackedProps>
 		}
 
 		componentDidMount() {
-			this.subscribe(PubSub.pieces, { _id: this.props.pieceId, rundownId: this.props.rundownId })
+			this.subscribe(PubSub.pieces, { _id: this.props.pieceId, startRundownId: this.props.rundownId })
 			this.autorun(() => {
-				if (this.props.piece && this.props.piece.content && this.props.piece.content.fileName) {
-					const piece = this.props.piece
-					let objId: string | undefined = undefined
-					objId = (piece.content as VTContent).fileName.toUpperCase()
+				const content = this.props.piece?.content as VTContent | undefined
+				const objId = content?.fileName?.toUpperCase()
 
-					if (objId) {
-						// if (this.mediaObjectSub) this.mediaObjectSub.stop()
-						this.subscribe(PubSub.mediaObjects, this.props.studioId, {
-							mediaId: objId,
-						})
-					}
+				if (objId) {
+					// if (this.mediaObjectSub) this.mediaObjectSub.stop()
+					this.subscribe(PubSub.mediaObjects, this.props.studioId, {
+						mediaId: objId,
+					})
 				}
 			})
 		}
@@ -252,7 +250,8 @@ export const ClipTrimPanel = translateWithTracker<IProps, IState, ITrackedProps>
 							<Tooltip overlay={t('Remove in-trimming')} placement="top">
 								<button
 									className="action-btn clip-trim-panel__timecode-encoders__input__reset"
-									onClick={this.onResetIn}>
+									onClick={this.onResetIn}
+								>
 									<FontAwesomeIcon icon={faUndo} />
 								</button>
 							</Tooltip>
@@ -263,7 +262,8 @@ export const ClipTrimPanel = translateWithTracker<IProps, IState, ITrackedProps>
 							<Tooltip overlay={t('Remove all trimming')} placement="top">
 								<button
 									className="action-btn clip-trim-panel__timecode-encoders__input__reset"
-									onClick={this.onResetAll}>
+									onClick={this.onResetAll}
+								>
 									<FontAwesomeIcon icon={faUndo} />
 								</button>
 							</Tooltip>
@@ -279,7 +279,8 @@ export const ClipTrimPanel = translateWithTracker<IProps, IState, ITrackedProps>
 							<Tooltip overlay={t('Remove out-trimming')} placement="top">
 								<button
 									className="action-btn clip-trim-panel__timecode-encoders__input__reset"
-									onClick={this.onResetOut}>
+									onClick={this.onResetOut}
+								>
 									<FontAwesomeIcon icon={faUndo} />
 								</button>
 							</Tooltip>

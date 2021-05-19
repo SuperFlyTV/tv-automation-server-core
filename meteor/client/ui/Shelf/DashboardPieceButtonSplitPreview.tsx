@@ -4,7 +4,7 @@ import ClassNames from 'classnames'
 import { Translated, translateWithTracker } from '../../lib/ReactMeteorData/react-meteor-data'
 import { MeteorReactComponent } from '../../lib/MeteorReactComponent'
 import { RundownUtils } from '../../lib/rundown'
-import { SourceLayerType, SplitsContent } from 'tv-automation-sofie-blueprints-integration'
+import { SourceLayerType, SplitsContent } from '@sofie-automation/blueprints-integration'
 import { SplitRole } from '../SegmentTimeline/Renderers/SplitsSourceRenderer'
 import { literal } from '../../../lib/lib'
 import { PieceGeneric } from '../../../lib/collections/Pieces'
@@ -36,7 +36,7 @@ const DEFAULT_POSITIONS = [
 export const DashboardPieceButtonSplitPreview = translateWithTracker<IProps, {}, {}>((props: IProps) => {
 	return {}
 })(
-	class extends MeteorReactComponent<Translated<IProps>> {
+	class DashboardPieceButtonSplitPreview extends MeteorReactComponent<Translated<IProps>> {
 		private objId: string
 
 		constructor(props: IProps) {
@@ -76,10 +76,12 @@ export const DashboardPieceButtonSplitPreview = translateWithTracker<IProps, {},
 									height: ((item.content && item.content.scale) * 100).toString() + '%',
 									clipPath:
 										item.content && item.content.crop
-											? `inset(${item.content.crop.top * 100}% ${item.content.crop.right * 100}% ${item.content.crop
-													.bottom * 100}% ${item.content.crop.left * 100}%)`
+											? `inset(${item.content.crop.top * 100}% ${item.content.crop.right * 100}% ${
+													item.content.crop.bottom * 100
+											  }% ${item.content.crop.left * 100}%)`
 											: undefined,
-								}}></div>
+								}}
+							></div>
 						)
 					})}
 				</div>

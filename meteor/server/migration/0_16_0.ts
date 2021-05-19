@@ -1,4 +1,4 @@
-import { ensureCollectionProperty, setExpectedVersion } from './lib'
+import { setExpectedVersion } from './lib'
 import { addMigrationSteps } from './databaseMigration'
 import { getCoreSystem, setCoreSystemStorePath } from '../../lib/collections/CoreSystem'
 import * as _ from 'underscore'
@@ -10,7 +10,7 @@ import { PeripheralDeviceAPI } from '../../lib/api/peripheralDevice'
  */
 
 // 0.16.0: Release 3
-addMigrationSteps('0.16.0', [
+export const addSteps = addMigrationSteps('0.16.0', [
 	{
 		id: 'CoreSystem.storePath',
 		canBeRunAutomatically: false,

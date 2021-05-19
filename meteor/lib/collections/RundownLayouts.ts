@@ -1,11 +1,11 @@
-import { Meteor } from 'meteor/meteor'
 import { TransformedCollection } from '../typings/meteor'
 import { registerCollection, ProtectedString } from '../lib'
-import { SourceLayerType } from 'tv-automation-sofie-blueprints-integration'
+import { SourceLayerType } from '@sofie-automation/blueprints-integration'
 import { createMongoCollection } from './lib'
 import { BlueprintId } from './Blueprints'
 import { ShowStyleBaseId } from './ShowStyleBases'
 import { UserId } from './Users'
+import { registerIndex } from '../database'
 
 /**
  * The view targeted by this layout:
@@ -36,6 +36,7 @@ export enum RundownLayoutElementType {
 	FILTER = 'filter',
 	EXTERNAL_FRAME = 'external_frame',
 	ADLIB_REGION = 'adlib_region',
+	PIECE_COUNTDOWN = 'piece_countdown',
 }
 
 export interface RundownLayoutElementBase {
@@ -65,6 +66,11 @@ export interface RundownLayoutAdLibRegion extends RundownLayoutElementBase {
 	labelBelowPanel: boolean
 }
 
+export interface RundownLayoutPieceCountdown extends RundownLayoutElementBase {
+	type: RundownLayoutElementType.PIECE_COUNTDOWN
+	sourceLayerIds: string[] | undefined
+}
+
 /**
  * A filter to be applied against the AdLib Pieces. If a member is undefined, the pool is not tested
  * against that filter. A member must match all of the sub-filters to be included in a filter view
@@ -81,6 +87,7 @@ export interface RundownLayoutFilterBase extends RundownLayoutElementBase {
 	tags: string[] | undefined
 	displayStyle: PieceDisplayStyle
 	showThumbnailsInList: boolean
+	hideDuplicates: boolean
 	currentSegment: boolean
 	/**
 	 * true: include Rundown Baseline AdLib Pieces
@@ -108,6 +115,13 @@ export interface DashboardLayoutAdLibRegion extends RundownLayoutAdLibRegion {
 	height: number
 }
 
+export interface DashboardLayoutPieceCountdown extends RundownLayoutPieceCountdown {
+	x: number
+	y: number
+	width: number
+	scale: number
+}
+
 export interface DashboardLayoutFilter extends RundownLayoutFilterBase {
 	x: number
 	y: number
@@ -125,6 +139,7 @@ export interface DashboardLayoutFilter extends RundownLayoutFilterBase {
 	hide?: boolean
 	displayTakeButtons?: boolean
 	queueAllAdlibs?: boolean
+	toggleOnSingleClick?: boolean
 }
 
 /** A string, identifying a RundownLayout */
@@ -138,6 +153,12 @@ export interface RundownLayoutBase {
 	name: string
 	type: RundownLayoutType.RUNDOWN_LAYOUT | RundownLayoutType.DASHBOARD_LAYOUT
 	filters: RundownLayoutElementBase[]
+	exposeAsStandalone: boolean
+	exposeAsShelf: boolean
+	icon: string
+	iconColor: string
+	openByDefault: boolean
+	startingHeight?: number
 }
 
 export interface RundownLayout extends RundownLayoutBase {
@@ -152,10 +173,10 @@ export enum ActionButtonType {
 	MOVE_NEXT_SEGMENT = 'move_next_segment',
 	MOVE_PREVIOUS_PART = 'move_previous_part',
 	MOVE_PREVIOUS_SEGMENT = 'move_previous_segment',
-	ACTIVATE = 'activate',
-	ACTIVATE_REHEARSAL = 'activate_rehearsal',
-	DEACTIVATE = 'deactivate',
-	RESET_RUNDOWN = 'reset_rundown',
+	// ACTIVATE = 'activate',
+	// ACTIVATE_REHEARSAL = 'activate_rehearsal',
+	// DEACTIVATE = 'deactivate',
+	// RESET_RUNDOWN = 'reset_rundown',
 	QUEUE_ADLIB = 'queue_adlib', // The idea for it is that you would be able to press and hold this button
 	// and then click on whatever adlib you would like
 }
@@ -176,20 +197,18 @@ export interface DashboardLayout extends RundownLayoutBase {
 	actionButtons?: DashboardLayoutActionButton[]
 }
 
-export const RundownLayouts: TransformedCollection<RundownLayoutBase, RundownLayoutBase> = createMongoCollection<
+export const RundownLayouts: TransformedCollection<
+	RundownLayoutBase,
 	RundownLayoutBase
->('rundownLayouts')
+> = createMongoCollection<RundownLayoutBase>('rundownLayouts')
 registerCollection('RundownLayouts', RundownLayouts)
-Meteor.startup(() => {
-	if (Meteor.isServer) {
-		// RundownLayouts._ensureIndex({
-		// 	studioId: 1,
-		// 	collectionId: 1,
-		// 	objId: 1,
-		// 	mediaId: 1
-		// })
-		RundownLayouts._ensureIndex({
-			showStyleBaseId: 1,
-		})
-	}
+
+// addIndex(RundownLayouts, {
+// 	studioId: 1,
+// 	collectionId: 1,
+// 	objId: 1,
+// 	mediaId: 1
+// })
+registerIndex(RundownLayouts, {
+	showStyleBaseId: 1,
 })

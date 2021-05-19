@@ -19,9 +19,17 @@ import {
 	MediaStreamType,
 } from './../collections/MediaObjects'
 import { literal, protectString } from '../lib'
-import { ISourceLayer, SourceLayerType, IBlueprintPieceGeneric } from 'tv-automation-sofie-blueprints-integration'
-import { IStudioSettings } from '../collections/Studios'
+import {
+	ISourceLayer,
+	SourceLayerType,
+	IBlueprintPieceGeneric,
+	PieceLifespan,
+	VTContent,
+	WithTimeline,
+} from '@sofie-automation/blueprints-integration'
+import { IStudioSettings, Studio } from '../collections/Studios'
 import { RundownAPI } from '../api/rundown'
+import { defaultStudio } from '../../__mocks__/defaultCollectionObjects'
 
 describe('lib/mediaObjects', () => {
 	testInFiber('buildFormatString', () => {
@@ -100,9 +108,12 @@ describe('lib/mediaObjects', () => {
 				name: '',
 				sourceLayerId: '',
 				outputLayerId: '',
-				content: {
+				content: literal<WithTimeline<VTContent>>({
 					fileName: 'test',
-				},
+					path: '',
+					timelineObjects: [],
+				}),
+				lifespan: PieceLifespan.WithinPart,
 			}),
 			literal<ISourceLayer>({
 				_id: '',
@@ -119,9 +130,12 @@ describe('lib/mediaObjects', () => {
 				name: '',
 				sourceLayerId: '',
 				outputLayerId: '',
-				content: {
+				content: literal<WithTimeline<VTContent>>({
 					fileName: 'TEST',
-				},
+					path: '',
+					timelineObjects: [],
+				}),
+				lifespan: PieceLifespan.WithinPart,
 			}),
 			literal<ISourceLayer>({
 				_id: '',
@@ -138,7 +152,10 @@ describe('lib/mediaObjects', () => {
 				name: '',
 				sourceLayerId: '',
 				outputLayerId: '',
-				content: {},
+				content: {
+					timelineObjects: [],
+				},
+				lifespan: PieceLifespan.WithinPart,
 			}),
 			literal<ISourceLayer>({
 				_id: '',
@@ -156,6 +173,10 @@ describe('lib/mediaObjects', () => {
 			mediaPreviewsUrl: '',
 			supportedAudioStreams: '4',
 			sofieUrl: '',
+		}
+		const mockStudio: Studio = {
+			...defaultStudio(protectString('studio0')),
+			settings: mockStudioSettings,
 		}
 
 		MediaObjects.insert(
@@ -226,13 +247,15 @@ describe('lib/mediaObjects', () => {
 			name: 'Test_file',
 			adlibPreroll: 0,
 			externalId: '',
-			infiniteMode: 0,
+			lifespan: PieceLifespan.WithinPart,
 			metaData: {},
 			outputLayerId: '',
 			sourceLayerId: '',
-			content: {
+			content: literal<WithTimeline<VTContent>>({
 				fileName: 'test_file',
-			},
+				path: '',
+				timelineObjects: [],
+			}),
 		})
 
 		const sourcelayer1 = literal<ISourceLayer>({
@@ -310,38 +333,42 @@ describe('lib/mediaObjects', () => {
 			name: 'Test_file_2',
 			adlibPreroll: 0,
 			externalId: '',
-			infiniteMode: 0,
+			lifespan: PieceLifespan.WithinPart,
 			metaData: {},
 			outputLayerId: '',
 			sourceLayerId: '',
-			content: {
+			content: literal<WithTimeline<VTContent>>({
 				fileName: 'test_file_2',
-			},
+				path: '',
+				timelineObjects: [],
+			}),
 		})
 
 		const piece3 = literal<IBlueprintPieceGeneric>({
 			name: 'Test_file_3',
 			adlibPreroll: 0,
 			externalId: '',
-			infiniteMode: 0,
+			lifespan: PieceLifespan.WithinPart,
 			metaData: {},
 			outputLayerId: '',
 			sourceLayerId: '',
-			content: {
+			content: literal<WithTimeline<VTContent>>({
 				fileName: 'test_file_3',
-			},
+				path: '',
+				timelineObjects: [],
+			}),
 		})
 
-		const status1 = checkPieceContentStatus(piece1, sourcelayer1, mockStudioSettings)
+		const status1 = checkPieceContentStatus(piece1, sourcelayer1, mockStudio)
 		expect(status1.status).toEqual(RundownAPI.PieceStatusCode.OK)
 		expect(status1.message).toBeFalsy()
 
-		const status2 = checkPieceContentStatus(piece2, sourcelayer1, mockStudioSettings)
+		const status2 = checkPieceContentStatus(piece2, sourcelayer1, mockStudio)
 		expect(status2.status).toEqual(RundownAPI.PieceStatusCode.SOURCE_BROKEN)
-		expect(status2.message).toContain('is not in accepted formats')
+		expect(status2.message).toContain('has the wrong format:')
 
-		const status3 = checkPieceContentStatus(piece3, sourcelayer1, mockStudioSettings)
+		const status3 = checkPieceContentStatus(piece3, sourcelayer1, mockStudio)
 		expect(status3.status).toEqual(RundownAPI.PieceStatusCode.SOURCE_MISSING)
-		expect(status3.message).toContain('is missing')
+		expect(status3.message).toContain('is not yet ready on the playout system')
 	})
 })

@@ -10,9 +10,10 @@ import {
 	VersionRange,
 	GENESIS_SYSTEM_VERSION,
 } from '../lib/collections/CoreSystem'
-import { getCurrentTime, unprotectString } from '../lib/lib'
+import { getCurrentTime, unprotectString, waitForPromiseAll } from '../lib/lib'
 import { Meteor } from 'meteor/meteor'
-import { CURRENT_SYSTEM_VERSION, prepareMigration, runMigration } from './migration/databaseMigration'
+import { prepareMigration, runMigration } from './migration/databaseMigration'
+import { CURRENT_SYSTEM_VERSION } from './migration/currentSystemVersion'
 import { setSystemStatus, StatusCode, removeSystemStatus } from './systemStatus/systemStatus'
 import { Blueprints, Blueprint } from '../lib/collections/Blueprints'
 import * as _ from 'underscore'
@@ -21,10 +22,14 @@ import { Studios, StudioId } from '../lib/collections/Studios'
 import { logger } from './logging'
 import * as semver from 'semver'
 import { findMissingConfigs } from './api/blueprints/config'
-import { ShowStyleVariants, createShowStyleCompound } from '../lib/collections/ShowStyleVariants'
+import { ShowStyleVariants } from '../lib/collections/ShowStyleVariants'
 import { syncFunction } from './codeControl'
 const PackageInfo = require('../package.json')
-const BlueprintIntegrationPackageInfo = require('../node_modules/tv-automation-sofie-blueprints-integration/package.json')
+import Agent from 'meteor/kschingiz:meteor-elastic-apm'
+import { profiler } from './api/profiler'
+import * as path from 'path'
+import { TMP_TSR_VERSION } from '@sofie-automation/blueprints-integration'
+import { createShowStyleCompound } from './api/showStyles'
 
 export { PackageInfo }
 
@@ -42,6 +47,15 @@ function initializeCoreSystem() {
 			previousVersion: null,
 			storePath: '', // to be filled in later
 			serviceMessages: {},
+			apm: {
+				enabled: false,
+				transactionSampleRate: -1,
+			},
+			cron: {
+				casparCGRestart: {
+					enabled: true,
+				},
+			},
 		})
 
 		// Check what migration has to provide:
@@ -272,47 +286,31 @@ function checkDatabaseVersion(
 function checkBlueprintCompability(blueprint: Blueprint) {
 	if (!PackageInfo.dependencies) throw new Meteor.Error(500, `Package.dependencies not set`)
 
-	let systemStatusId = 'blueprintCompability_' + blueprint._id
+	const systemStatusId = 'blueprintCompability_' + blueprint._id
 
-	let integrationStatus = checkDatabaseVersion(
+	const systemVersions = getRelevantSystemVersions()
+
+	const integrationStatus = checkDatabaseVersion(
 		parseVersion(blueprint.integrationVersion || '0.0.0'),
-		parseRange(PackageInfo.dependencies['tv-automation-sofie-blueprints-integration']),
+		parseRange('~' + PackageInfo.version),
 		'Blueprint has to be updated',
 		'blueprint.integrationVersion',
-		'core.tv-automation-sofie-blueprints-integration'
+		'core.@sofie-automation/blueprints-integration'
 	)
-	let tsrStatus = checkDatabaseVersion(
+	const tsrStatus = checkDatabaseVersion(
 		parseVersion(blueprint.TSRVersion || '0.0.0'),
-		parseRange(BlueprintIntegrationPackageInfo.dependencies['timeline-state-resolver-types']),
+		parseRange('~' + systemVersions['timeline-state-resolver-types']),
 		'Blueprint has to be updated',
 		'blueprint.TSRVersion',
 		'core.timeline-state-resolver-types'
 	)
-	let coreStatus:
-		| {
-				statusCode: StatusCode
-				messages: string[]
-		  }
-		| undefined = undefined
-	if (blueprint.minimumCoreVersion) {
-		coreStatus = checkDatabaseVersion(
-			parseVersion(CURRENT_SYSTEM_VERSION),
-			parseRange(blueprint.minimumCoreVersion),
-			'Blueprint does not support this version of core',
-			'blueprint.minimumCoreVersion',
-			'core system'
-		)
-	}
 
-	if (coreStatus && coreStatus.statusCode >= StatusCode.WARNING_MAJOR) {
-		coreStatus.messages[0] = 'Core version: ' + coreStatus.messages[0]
-		setSystemStatus(systemStatusId, coreStatus)
+	if (integrationStatus.statusCode >= StatusCode.WARNING_MAJOR) {
+		integrationStatus.messages[0] = 'Integration version: ' + integrationStatus.messages[0]
+		setSystemStatus(systemStatusId, integrationStatus)
 	} else if (tsrStatus && tsrStatus.statusCode >= StatusCode.WARNING_MAJOR) {
 		tsrStatus.messages[0] = 'Core - TSR library version: ' + tsrStatus.messages[0]
 		setSystemStatus(systemStatusId, tsrStatus)
-	} else if (integrationStatus.statusCode >= StatusCode.WARNING_MAJOR) {
-		integrationStatus.messages[0] = 'Integration version: ' + integrationStatus.messages[0]
-		setSystemStatus(systemStatusId, integrationStatus)
 	} else {
 		setSystemStatus(systemStatusId, {
 			statusCode: StatusCode.GOOD,
@@ -344,7 +342,7 @@ const checkBlueprintsConfig = syncFunction(function checkBlueprintsConfig() {
 		const blueprint = Blueprints.findOne(studio.blueprintId)
 		if (!blueprint) return
 
-		const diff = findMissingConfigs(blueprint.studioConfigManifest, studio.config)
+		const diff = findMissingConfigs(blueprint.studioConfigManifest, studio.blueprintConfig)
 		const systemStatusId = `blueprintConfig_${blueprint._id}_studio_${studio._id}`
 		setBlueprintConfigStatus(systemStatusId, diff, studio._id)
 		blueprintIds[systemStatusId] = true
@@ -365,7 +363,7 @@ const checkBlueprintsConfig = syncFunction(function checkBlueprintsConfig() {
 			const compound = createShowStyleCompound(showBase, variant)
 			if (!compound) return
 
-			const diff = findMissingConfigs(blueprint.showStyleConfigManifest, compound.config)
+			const diff = findMissingConfigs(blueprint.showStyleConfigManifest, compound.blueprintConfig)
 			if (diff && diff.length) {
 				allDiffs.push(`Variant ${variant._id}: ${diff.join(', ')}`)
 			}
@@ -382,7 +380,7 @@ const checkBlueprintsConfig = syncFunction(function checkBlueprintsConfig() {
 		}
 	})
 	lastBlueprintConfigIds = blueprintIds
-})
+}, 'checkBlueprintsConfig')
 function setBlueprintConfigStatus(systemStatusId: string, diff: string[], studioId?: StudioId) {
 	if (diff && diff.length > 0) {
 		setSystemStatus(systemStatusId, {
@@ -399,97 +397,47 @@ function setBlueprintConfigStatus(systemStatusId: string, diff: string[], studio
 	}
 }
 
+let SYSTEM_VERSIONS: { [name: string]: string } | undefined
 export function getRelevantSystemVersions(): { [name: string]: string } {
+	if (SYSTEM_VERSIONS) {
+		return SYSTEM_VERSIONS
+	}
 	const versions: { [name: string]: string } = {}
 
 	let dependencies: any = PackageInfo.dependencies
 	if (dependencies) {
-		let names = _.keys(dependencies)
-		// Omit system libraries
-		let omitNames = [
-			'@babel/runtime',
-			'@fortawesome/fontawesome',
-			'@fortawesome/free-solid-svg-icons',
-			'@fortawesome/fontawesome-free-solid',
-			'@fortawesome/fontawesome-svg-core',
-			'@fortawesome/react-fontawesome',
-			'@nrk/core-icons',
-			'@popperjs/core',
-			'@slack/client',
-			'@types/amqplib',
-			'@types/body-parser',
-			'@types/semver',
-			'@types/react-circular-progressbar',
-			'@types/request',
-			'amqplib',
-			'body-parser',
-			'caller-module',
-			'chai',
-			'classnames',
-			'concurrently',
-			'core-js',
-			'element-resize-event',
-			'fast-clone',
-			'html-entities',
-			'i18next',
-			'i18next-browser-languagedetector',
-			'i18next-xhr-backend',
-			'immutability-helper',
-			'indexof',
-			'lottie-web',
-			'meteor-node-stubs',
-			'moment',
-			'mousetrap',
-			'ntp-client',
-			'object-path',
-			'prop-types',
-			'query-string',
-			'rc-tooltip',
-			'react',
-			'react-circular-progressbar',
-			'react-contextmenu',
-			'react-datepicker',
-			'react-dom',
-			'react-escape',
-			'react-hotkeys',
-			'react-i18next',
-			'react-intersection-observer',
-			'@crello/react-lottie',
-			'react-dnd',
-			'react-dnd-html5-backend',
-			'react-moment',
-			'react-router-dom',
-			'react-timer-hoc',
-			'react-popper',
-			'vm2',
-			'semver',
-			'timecode',
-			'soap',
-			'underscore',
-			'velocity-animate',
-			'velocity-react',
-			'winston',
-			'xml2json',
-		]
-		names = _.filter(names, (name) => {
-			return omitNames.indexOf(name) === -1
-		})
+		const libNames: string[] = ['mos-connection', 'superfly-timeline']
 
-		let sanitizeVersion = (v) => {
-			if (v.match(/git/i)) {
+		const sanitizeVersion = (v: string) => {
+			if (v.match(/git/i) || v.match(/file:../i)) {
 				return '0.0.0'
 			} else {
 				return v
 			}
 		}
 
-		_.each(names, (name) => {
-			versions[name] = sanitizeVersion(dependencies[name])
-		})
+		const getRealVersion = async (name: string, fallback: string): Promise<string> => {
+			try {
+				const pkgInfo = require(name + '/package.json')
+				return pkgInfo.version
+			} catch (e) {
+				logger.warn(`Failed to read version of package "${name}": ${e}`)
+				return sanitizeVersion(fallback)
+			}
+		}
+
+		waitForPromiseAll([
+			...libNames.map(async (name) => {
+				versions[name] = await getRealVersion(name, dependencies[name])
+			}),
+		])
 		versions['core'] = PackageInfo.versionExtended || PackageInfo.version // package version
-		versions['timeline-state-resolver-types'] =
-			BlueprintIntegrationPackageInfo.dependencies['timeline-state-resolver-types']
-	} else logger.error(`Core package dependencies missing`)
+		versions['timeline-state-resolver-types'] = TMP_TSR_VERSION
+	} else {
+		logger.error(`Core package dependencies missing`)
+	}
+
+	SYSTEM_VERSIONS = versions
 	return versions
 }
 function startupMessage() {
@@ -499,7 +447,14 @@ function startupMessage() {
 		logger.info(`Core starting up`)
 		logger.info(`Core system version: "${CURRENT_SYSTEM_VERSION}"`)
 
-		logger.info(`Core package version: "${PackageInfo.versionExtended || PackageInfo.version}"`)
+		// @ts-ignore
+		if (global.gc) {
+			logger.info(`Manual garbage-collection is enabled`)
+		} else {
+			logger.warn(
+				`Enable garbage-collection by passing --expose_gc to node in prod or set SERVER_NODE_OPTIONS=--expose_gc in dev`
+			)
+		}
 
 		const versions = getRelevantSystemVersions()
 		_.each(versions, (version, name) => {
@@ -508,9 +463,41 @@ function startupMessage() {
 	}
 }
 
+function startInstrumenting() {
+	if (!!process.env.JEST_WORKER_ID) {
+		return
+	}
+
+	// attempt init elastic APM
+	const system = getCoreSystem()
+	const { APM_HOST, APM_SECRET, KIBANA_INDEX, APP_HOST } = process.env
+
+	if (APM_HOST && system && system.apm) {
+		logger.info(`APM agent starting up`)
+		Agent.start({
+			serviceName: KIBANA_INDEX || 'tv-automation-server-core',
+			hostname: APP_HOST,
+			serverUrl: APM_HOST,
+			secretToken: APM_SECRET,
+			active: system.apm.enabled,
+			transactionSampleRate: system.apm.transactionSampleRate,
+			disableMeteorInstrumentations: ['methods', 'http-out', 'session', 'async', 'metrics'],
+		})
+		profiler.setActive(system.apm.enabled || false)
+	} else {
+		logger.info(`APM agent inactive`)
+		Agent.start({
+			serviceName: 'tv-automation-server-core',
+			active: false,
+			disableMeteorInstrumentations: ['methods', 'http-out', 'session', 'async', 'metrics'],
+		})
+	}
+}
+
 Meteor.startup(() => {
 	if (Meteor.isServer) {
 		startupMessage()
 		initializeCoreSystem()
+		startInstrumenting()
 	}
 })

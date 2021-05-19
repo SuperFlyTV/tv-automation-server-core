@@ -7,14 +7,14 @@ import { Part, DBPart } from '../../../lib/collections/Parts'
 import { Piece } from '../../../lib/collections/Pieces'
 
 // import { buildTimelineObjsForRundown } from '../playout'
-// import { getPartGroupId, getPartFirstObjectId, getPieceGroupId, getPieceFirstObjectId } from 'tv-automation-sofie-blueprints-integration/dist/timeline'
+// import { getPartGroupId, getPartFirstObjectId, getPieceGroupId, getPieceFirstObjectId } from '@sofie-automation/blueprints-integration/dist/timeline'
 // import { TriggerType } from 'superfly-timeline'
 // import { RundownAPI } from '../../../lib/api/rundown'
 
 // const expect = chai.expect
 // const assert = chai.assert
 
-describe('playout: buildTimelineObjsForRundown', function() {
+describe('playout: buildTimelineObjsForRundown', function () {
 	test('mockTest', () => {
 		expect(1).toEqual(1)
 	})
@@ -628,7 +628,6 @@ function createEmptyRundownData () {
 		previousPartId: null,
 		currentPartId: null,
 		nextPartId: null,
-		dataSource: '',
 		importVersions: {
 			studio: '',
 			showStyleBase: '',

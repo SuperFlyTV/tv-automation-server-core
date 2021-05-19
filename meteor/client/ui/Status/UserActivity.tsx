@@ -21,11 +21,15 @@ export const UserActionsList = withTranslation()(
 	class UserActionsList extends React.Component<Translated<IUserActionsListProps>> {
 		renderMessageHead() {
 			const { t } = this.props
+			const executionTimeExplanation =
+				'formatted as "a + b, (c)" where a is the time it took for Core to execute the command, b is the time it took for the Gateway to execute the timeline and c is the duration it took in TSR to resolve the timeline'
 			return (
 				<thead>
 					<tr>
 						<th className="c3 user-action-log__timestamp">{t('Timestamp')}</th>
-						<th className="c3 user-action-log__executionTime">{t('Execution time')}</th>
+						<th className="c3 user-action-log__executionTime" title={t(executionTimeExplanation)}>
+							{t('Execution time*')}
+						</th>
 						<th className="c1 user-action-log__userId">{t('User ID')}</th>
 						<th className="c2 user-action-log__clientAddress">{t('Client IP')}</th>
 						<th className="c3 user-action-log__context">{t('Action')}</th>
@@ -48,12 +52,16 @@ export const UserActionsList = withTranslation()(
 								<tr
 									className={this.props.onItemClick ? 'clickable' : undefined}
 									key={unprotectString(msg._id)}
-									onClick={(e) => this.props.onItemClick && this.props.onItemClick(msg)}>
+									onClick={(e) => this.props.onItemClick && this.props.onItemClick(msg)}
+								>
 									<td className="user-action-log__timestamp">
 										<Moment format="YYYY/MM/DD HH:mm:ss.SSS">{msg.timestamp}</Moment>
 									</td>
 									<td className="user-action-log__executionTime">
-										{msg.executionTime ? msg.executionTime + 'ms' : null}
+										{msg.executionTime ? msg.executionTime : null}
+										{msg.gatewayDuration ? ` + ${msg.gatewayDuration.join(', ')}` : null}
+										{msg.timelineResolveDuration ? ` (${msg.timelineResolveDuration.join(', ')})` : null}
+										{' ms'}
 									</td>
 									<td className="user-action-log__userId">{msg.userId}</td>
 									<td className="user-action-log__clientAddress">{msg.clientAddress}</td>
@@ -109,13 +117,8 @@ const UserActivity = translateWithTracker<IUserActivityProps, IUserActivityState
 			super(props)
 
 			this.state = {
-				dateFrom: moment()
-					.startOf('day')
-					.valueOf(),
-				dateTo: moment()
-					.add(1, 'days')
-					.startOf('day')
-					.valueOf(),
+				dateFrom: moment().startOf('day').valueOf(),
+				dateTo: moment().add(1, 'days').startOf('day').valueOf(),
 			}
 		}
 		componentDidMount() {

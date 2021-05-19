@@ -1,11 +1,11 @@
 import { TransformedCollection } from '../typings/meteor'
 import { registerCollection, ProtectedString } from '../lib'
-import { Meteor } from 'meteor/meteor'
-import { IngestRundown, IngestSegment, IngestPart } from 'tv-automation-sofie-blueprints-integration'
+import { IngestRundown, IngestSegment, IngestPart } from '@sofie-automation/blueprints-integration'
 import { createMongoCollection } from './lib'
 import { RundownId } from './Rundowns'
 import { SegmentId } from './Segments'
 import { PartId } from './Parts'
+import { registerIndex } from '../database'
 
 export enum IngestCacheType {
 	RUNDOWN = 'rundown',
@@ -51,14 +51,12 @@ export interface IngestDataCacheObjPart extends IngestDataCacheObjBase {
 }
 export type IngestDataCacheObj = IngestDataCacheObjRundown | IngestDataCacheObjSegment | IngestDataCacheObjPart
 
-export const IngestDataCache: TransformedCollection<IngestDataCacheObj, IngestDataCacheObj> = createMongoCollection<
+export const IngestDataCache: TransformedCollection<
+	IngestDataCacheObj,
 	IngestDataCacheObj
->('ingestDataCache')
+> = createMongoCollection<IngestDataCacheObj>('ingestDataCache')
 registerCollection('IngestDataCache', IngestDataCache)
-Meteor.startup(() => {
-	if (Meteor.isServer) {
-		IngestDataCache._ensureIndex({
-			rundownId: 1,
-		})
-	}
+
+registerIndex(IngestDataCache, {
+	rundownId: 1,
 })

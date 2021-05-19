@@ -2,8 +2,7 @@ import { Meteor } from 'meteor/meteor'
 import * as _ from 'underscore'
 import * as AMQP from 'amqplib'
 import { logger } from '../../logging'
-import { ExternalMessageQueueObjRabbitMQ } from 'tv-automation-sofie-blueprints-integration'
-import { promisify } from 'util'
+import { ExternalMessageQueueObjRabbitMQ } from '@sofie-automation/blueprints-integration'
 import { ExternalMessageQueueObj, ExternalMessageQueueObjId } from '../../../lib/collections/ExternalMessageQueue'
 import { ConfigRef } from '../blueprints/config'
 import { unprotectString } from '../../../lib/lib'
@@ -302,34 +301,3 @@ export async function sendRabbitMQMessage(msg0: ExternalMessageQueueObjRabbitMQ 
 
 	await channelManager.sendMessage(exchangeTopic, routingKey, msg0._id, message, headers)
 }
-/*
-// Temporary self-test:
-// Consume messages from RabbitMQ database
-export async function testRabbitMQ () {
-	let exchangeTopic = 'sofie.segment.events'
-	// let args = process.argv.slice(2)
-	let routingKey = 'anonymous.info'
-
-	let cchm = await getChannelManager('amqp://localhost')
-
-	cchm.channel.assertExchange(exchangeTopic, 'topic', {durable: true})
-
-	const q = await cchm.channel.assertQueue('', {exclusive: true})
-
-	console.log(' [*] Waiting for logs. To exit press CTRL+C')
-
-	cchm.channel.bindQueue(q.queue, exchangeTopic, routingKey)
-
-	cchm.channel.consume(q.queue, (msg) => {
-		console.log('message', msg)
-		if (msg) {
-			console.log('message', msg.content.toString())
-		}
-	}, {
-		noAck: true
-	})
-
-}
-testRabbitMQ()
-.catch(console.log)
-*/

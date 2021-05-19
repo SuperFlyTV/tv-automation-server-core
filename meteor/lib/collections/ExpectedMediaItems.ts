@@ -1,4 +1,3 @@
-import { Meteor } from 'meteor/meteor'
 import { TransformedCollection } from '../typings/meteor'
 import { registerCollection, Time, ProtectedString } from '../lib'
 import { createMongoCollection } from './lib'
@@ -7,10 +6,15 @@ import { PartId } from './Parts'
 import { StudioId } from './Studios'
 import { BucketId } from './Buckets'
 import { PieceId } from './Pieces'
+import { registerIndex } from '../database'
+import { AdLibActionId } from './AdLibActions'
 
-/** A string, identifying a ExpectedMediaItem */
+/** A string, identifying a ExpectedMediaItem
+ * @deprecated
+ */
 export type ExpectedMediaItemId = ProtectedString<'ExpectedMediaItemId'>
 
+/** @deprecated */
 export interface ExpectedMediaItemBase {
 	_id: ExpectedMediaItemId
 
@@ -38,40 +42,46 @@ export interface ExpectedMediaItemBase {
 	/** Time to wait before removing file */
 	lingerTime?: number
 }
-
+/** @deprecated */
 export interface ExpectedMediaItemRundown extends ExpectedMediaItemBase {
 	/** The rundown id that is the source of this MediaItem */
 	rundownId: RundownId
 
 	/** The part id that is the source of this Media Item */
-	partId: PartId
+	partId: PartId | undefined
 }
-
-export interface ExpectedMediaItemBucket extends ExpectedMediaItemBase {
+/** @deprecated */
+export interface ExpectedMediaItemBucketPiece extends ExpectedMediaItemBase {
 	/** The bucket id that is the source of this Media Item */
 	bucketId: BucketId
 
 	/** The bucked adLib piece that is the source of this Media Item */
 	bucketAdLibPieceId: PieceId
 }
+/** @deprecated */
+export interface ExpectedMediaItemBucketAction extends ExpectedMediaItemBase {
+	/** The bucket id that is the source of this Media Item */
+	bucketId: BucketId
 
-export type ExpectedMediaItem = ExpectedMediaItemRundown | ExpectedMediaItemBucket
-
-export const ExpectedMediaItems: TransformedCollection<ExpectedMediaItem, ExpectedMediaItem> = createMongoCollection<
+	/** The bucked adLib piece that is the source of this Media Item */
+	bucketAdLibActionId: AdLibActionId
+}
+/** @deprecated */
+export type ExpectedMediaItem = ExpectedMediaItemRundown | ExpectedMediaItemBucketPiece | ExpectedMediaItemBucketAction
+/** @deprecated */
+export const ExpectedMediaItems: TransformedCollection<
+	ExpectedMediaItem,
 	ExpectedMediaItem
->('expectedMediaItems')
+> = createMongoCollection<ExpectedMediaItem>('expectedMediaItems')
 registerCollection('ExpectedMediaItems', ExpectedMediaItems)
-Meteor.startup(() => {
-	if (Meteor.isServer) {
-		ExpectedMediaItems._ensureIndex({
-			path: 1,
-		})
-		ExpectedMediaItems._ensureIndex({
-			mediaFlowId: 1,
-			studioId: 1,
-		})
-		ExpectedMediaItems._ensureIndex({
-			rundownId: 1,
-		})
-	}
+
+registerIndex(ExpectedMediaItems, {
+	path: 1,
+})
+registerIndex(ExpectedMediaItems, {
+	mediaFlowId: 1,
+	studioId: 1,
+})
+registerIndex(ExpectedMediaItems, {
+	rundownId: 1,
 })

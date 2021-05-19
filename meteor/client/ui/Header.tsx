@@ -10,7 +10,6 @@ import * as VelocityReact from 'velocity-react'
 import { MeteorReactComponent } from '../lib/MeteorReactComponent'
 import { translateWithTracker, Translated } from '../lib/ReactMeteorData/ReactMeteorData'
 import { CoreSystem } from '../../lib/collections/CoreSystem'
-import { UserId } from '../../lib/collections/Users'
 import { Settings } from '../../lib/Settings'
 
 interface IPropsHeader {
@@ -25,8 +24,8 @@ interface ITrackedPropsHeader {
 }
 
 interface IStateHeader {
-	showNotifications: boolean
-	showSupportPanel: boolean
+	isNotificationCenterOpen: NoticeLevel | undefined
+	isSupportPanelOpen: boolean
 }
 
 class Header extends MeteorReactComponent<Translated<IPropsHeader & ITrackedPropsHeader>, IStateHeader> {
@@ -34,8 +33,8 @@ class Header extends MeteorReactComponent<Translated<IPropsHeader & ITrackedProp
 		super(props)
 
 		this.state = {
-			showNotifications: false,
-			showSupportPanel: false,
+			isNotificationCenterOpen: undefined,
+			isSupportPanelOpen: false,
 		}
 	}
 
@@ -55,17 +54,20 @@ class Header extends MeteorReactComponent<Translated<IPropsHeader & ITrackedProp
 		})
 	}
 
-	onToggleNotifications = (e: React.MouseEvent<HTMLButtonElement>) => {
-		NotificationCenter.isOpen = !this.state.showNotifications
+	onToggleNotifications = (e: React.MouseEvent<HTMLButtonElement>, filter: NoticeLevel | undefined) => {
+		if (this.state.isNotificationCenterOpen === filter) {
+			filter = undefined
+		}
+		NotificationCenter.isOpen = filter !== undefined ? true : false
 
 		this.setState({
-			showNotifications: !this.state.showNotifications,
+			isNotificationCenterOpen: filter,
 		})
 	}
 
 	onToggleSupportPanel = (e: React.MouseEvent<HTMLButtonElement>) => {
 		this.setState({
-			showSupportPanel: !this.state.showSupportPanel,
+			isSupportPanelOpen: !this.state.isSupportPanelOpen,
 		})
 	}
 
@@ -89,8 +91,11 @@ class Header extends MeteorReactComponent<Translated<IPropsHeader & ITrackedProp
 							},
 							easing: 'ease-in',
 							duration: 500,
-						}}>
-						{this.state.showNotifications && <NotificationCenterPanel limitCount={15} />}
+						}}
+					>
+						{this.state.isNotificationCenterOpen !== undefined && (
+							<NotificationCenterPanel limitCount={15} filter={this.state.isNotificationCenterOpen} />
+						)}
 					</VelocityReact.VelocityTransitionGroup>
 					<VelocityReact.VelocityTransitionGroup
 						enter={{
@@ -106,14 +111,32 @@ class Header extends MeteorReactComponent<Translated<IPropsHeader & ITrackedProp
 							},
 							easing: 'ease-in',
 							duration: 500,
-						}}>
-						{this.state.showSupportPanel && <SupportPopUp />}
+						}}
+					>
+						{this.state.isSupportPanelOpen && <SupportPopUp />}
 					</VelocityReact.VelocityTransitionGroup>
 				</ErrorBoundary>
 				<ErrorBoundary>
 					<div className="status-bar">
-						<NotificationCenterPanelToggle onClick={this.onToggleNotifications} isOpen={this.state.showNotifications} />
-						<SupportPopUpToggle onClick={this.onToggleSupportPanel} isOpen={this.state.showSupportPanel} />
+						<NotificationCenterPanelToggle
+							onClick={(e) => this.onToggleNotifications(e, NoticeLevel.CRITICAL)}
+							isOpen={this.state.isNotificationCenterOpen === NoticeLevel.CRITICAL}
+							filter={NoticeLevel.CRITICAL}
+							className="type-critical"
+						/>
+						<NotificationCenterPanelToggle
+							onClick={(e) => this.onToggleNotifications(e, NoticeLevel.WARNING)}
+							isOpen={this.state.isNotificationCenterOpen === NoticeLevel.WARNING}
+							filter={NoticeLevel.WARNING}
+							className="type-warning"
+						/>
+						<NotificationCenterPanelToggle
+							onClick={(e) => this.onToggleNotifications(e, NoticeLevel.NOTIFICATION | NoticeLevel.TIP)}
+							isOpen={this.state.isNotificationCenterOpen === (NoticeLevel.NOTIFICATION | NoticeLevel.TIP)}
+							filter={NoticeLevel.NOTIFICATION | NoticeLevel.TIP}
+							className="type-notification"
+						/>
+						<SupportPopUpToggle onClick={this.onToggleSupportPanel} isOpen={this.state.isSupportPanelOpen} />
 					</div>
 				</ErrorBoundary>
 				<div className="header dark">

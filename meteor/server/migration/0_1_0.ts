@@ -2,7 +2,7 @@ import * as _ from 'underscore'
 import { addMigrationSteps } from './databaseMigration'
 import { logger } from '../logging'
 import { Studios, Studio } from '../../lib/collections/Studios'
-import { ensureCollectionProperty } from './lib'
+import { ensureCollectionProperty, ensureCollectionPropertyManual } from './lib'
 import { PeripheralDevices } from '../../lib/collections/PeripheralDevices'
 import { PeripheralDeviceAPI } from '../../lib/api/peripheralDevice'
 import { protectString } from '../../lib/lib'
@@ -13,7 +13,7 @@ import { protectString } from '../../lib/lib'
  */
 
 // 0.1.0: These are the "default" migration steps
-addMigrationSteps('0.1.0', [
+export const addSteps = addMigrationSteps('0.1.0', [
 	{
 		id: 'studio exists',
 		canBeRunAutomatically: true,
@@ -34,22 +34,25 @@ addMigrationSteps('0.1.0', [
 					sofieUrl: '',
 				},
 				mappings: {},
-				config: [],
+				blueprintConfig: {},
 				_rundownVersionHash: '',
+				routeSets: {},
+				routeSetExclusivityGroups: {},
+				packageContainers: {},
+				thumbnailContainerIds: [],
+				previewContainerIds: [],
 			})
 		},
 	},
-	ensureCollectionProperty(
+	ensureCollectionPropertyManual(
 		'Studios',
 		{},
 		'name',
-		null,
 		'text',
 		'Studio $id: Name',
 		'Enter the Name of the Studio "$id"'
 	),
 	ensureCollectionProperty('Studios', {}, 'mappings', {}),
-	ensureCollectionProperty('Studios', {}, 'config', []),
 
 	{
 		id: 'Assign devices to studio',

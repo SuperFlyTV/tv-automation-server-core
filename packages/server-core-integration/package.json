@@ -1,0 +1,105 @@
+{
+	"name": "@sofie-automation/server-core-integration",
+	"version": "1.35.0-in-development",
+	"description": "Library for connecting to Core",
+	"main": "dist/index.js",
+	"typings": "dist/index.d.ts",
+	"module": "dist/module/index.js",
+	"browser": "dist/browser/index.js",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nrkno/tv-automation-server-core.git",
+		"directory": "packages/server-core-integration"
+	},
+	"bugs": {
+		"url": "https://github.com/nrkno/tv-automation-server-core/issues"
+	},
+	"homepage": "https://github.com/nrkno/tv-automation-server-core/blob/master/packages/server-core-integration#readme",
+	"author": {
+		"name": "Johan Nyman",
+		"email": "johan@superfly.tv",
+		"url": "http://superfly.tv"
+	},
+	"contributors": [
+		{
+			"name": "Stephan Nordnes Eriksen",
+			"email": "Stephanruler@gmail.com"
+		},
+		{
+			"name": "Richard Cartwright",
+			"email": "spark@superfly.tv"
+		}
+	],
+	"scripts": {
+		"info": "npm-scripts-info",
+		"build": "rimraf dist && yarn build:main && yarn copytypes",
+		"build:main": "tsc -p tsconfig.build.json",
+		"lint": "tslint --project tsconfig.json --config tslint.json",
+		"unit": "jest",
+		"test": "yarn lint && yarn unit",
+		"test:integration": "yarn lint && jest --config=jest-integration.config.js",
+		"watch": "jest --watch",
+		"copytypes": "copyfiles -u 1 src/types/* dist",
+		"cov": "jest --coverage; open-cli coverage/lcov-report/index.html",
+		"cov-open": "open-cli coverage/lcov-report/index.html",
+		"send-coverage": "codecov -p ../..",
+		"validate:dependencies": "yarn audit --groups dependencies && yarn license-validate",
+		"validate:dev-dependencies": "yarn audit --groups devDependencies",
+		"license-validate": "node-license-validator -p -d --allow-licenses MIT BSD BSD-2-Clause BSD-3-Clause 0BSD ISC Apache Apache-2.0 Unlicense"
+	},
+	"scripts-info": {
+		"info": "Display information about the scripts",
+		"build": "(Trash and re)build the library",
+		"build:main": "Builds main build command without trash.",
+		"lint": "Lint all typescript source files",
+		"unit": "Build the library and run unit tests",
+		"test": "Lint, build, and test the library",
+		"test:integration": "Integration tests. Work in progress",
+		"watch": "Watch source files, rebuild library on changes, rerun relevant tests",
+		"cov": "Run tests, generate the HTML coverage report, and open it in a browser",
+		"cov-open": "Open current test coverage",
+		"send-coverage": "send coverage to codecov",
+		"validate:dependencies": "Scan dependencies for vulnerabilities and check licenses",
+		"license-validate": "Validate licenses for dependencies.",
+		"precommit": "lint-staged"
+	},
+	"engines": {
+		"node": ">=10.10"
+	},
+	"files": [
+		"/dist",
+		"/CHANGELOG.md",
+		"/README.md",
+		"/LICENSE"
+	],
+	"keywords": [
+		"broadcast",
+		"socket",
+		"typescript",
+		"javascript",
+		"open",
+		"source",
+		"automation",
+		"ncs",
+		"nrcs",
+		"rundown",
+		"production"
+	],
+	"dependencies": {
+		"data-store": "3.1.0",
+		"ejson": "^2.2.0",
+		"faye-websocket": "^0.11.3",
+		"got": "^11.8.2",
+		"tslib": "^2.0.3",
+		"underscore": "^1.12.1"
+	},
+	"lint-staged": {
+		"*.{js,css,json,md,scss}": [
+			"prettier --write"
+		],
+		"*.{ts,tsx}": [
+			"yarn lint --fix"
+		]
+	}
+}

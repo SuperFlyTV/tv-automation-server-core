@@ -26,7 +26,12 @@ export interface NewRundownAPI {
 	resyncRundown(rundownId: RundownId): Promise<TriggerReloadDataResponse>
 	resyncSegment(rundownId: RundownId, segmentId: SegmentId): Promise<TriggerReloadDataResponse>
 	unsyncRundown(rundownId: RundownId): Promise<void>
-	unsyncSegment(rundownId: RundownId, segmentId: SegmentId): Promise<void>
+	moveRundown(
+		rundownId: RundownId,
+		intoPlaylistId: RundownPlaylistId | null,
+		rundownsIdsInPlaylistInOrder: RundownId[]
+	): Promise<void>
+	restoreRundownsInPlaylistToDefaultOrder(playlistId: RundownPlaylistId): Promise<void>
 }
 
 export enum RundownAPIMethods {
@@ -39,7 +44,8 @@ export enum RundownAPIMethods {
 	'resyncRundown' = 'rundown.resyncRundown',
 	'resyncSegment' = 'rundown.resyncSegment',
 	'unsyncRundown' = 'rundown.unsyncRundown',
-	'unsyncSegment' = 'rundown.unsyncSegment',
+	'moveRundown' = 'rundown.moveRundown',
+	'restoreRundownsInPlaylistToDefaultOrder' = 'rundown.restoreRundownsInPlaylistToDefaultOrder',
 }
 
 export namespace RundownAPI {
@@ -81,9 +87,14 @@ export function runInRundownContext<T>(rundown: Rundown, fcn: () => T, errorInfo
 function handleRundownContextError(rundown: Rundown, errorInformMessage: string | undefined, error: any) {
 	rundown.appendNote({
 		type: NoteType.ERROR,
-		message:
-			(errorInformMessage ? errorInformMessage : 'Something went wrong when processing data this rundown.') +
-			`Error message: ${(error || 'N/A').toString()}`,
+		message: {
+			key: `${
+				errorInformMessage || 'Something went wrong when processing data for this rundown.'
+			} Error message: {{error}}`,
+			args: {
+				error: `${error || 'N/A'}`,
+			},
+		},
 		origin: {
 			name: rundown.name,
 		},

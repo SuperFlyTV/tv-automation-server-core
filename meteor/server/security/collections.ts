@@ -16,7 +16,6 @@ import { Blueprints } from '../../lib/collections/Blueprints'
 import { RundownPlaylists, RundownPlaylist } from '../../lib/collections/RundownPlaylists'
 import { Studios, Studio } from '../../lib/collections/Studios'
 import { ExternalMessageQueue } from '../../lib/collections/ExternalMessageQueue'
-import { RecordedFiles } from '../../lib/collections/RecordedFiles'
 import { MediaObjects } from '../../lib/collections/MediaObjects'
 import { ShowStyleBases } from '../../lib/collections/ShowStyleBases'
 import { ShowStyleVariants } from '../../lib/collections/ShowStyleVariants'
@@ -34,11 +33,10 @@ import { PieceInstances, PieceInstance } from '../../lib/collections/PieceInstan
 import { AdLibPieces } from '../../lib/collections/AdLibPieces'
 import { RundownBaselineAdLibPieces, RundownBaselineAdLibItem } from '../../lib/collections/RundownBaselineAdLibPieces'
 import { IngestDataCache, IngestDataCacheObj } from '../../lib/collections/IngestDataCache'
-import { AsRunLog, AsRunLogEvent } from '../../lib/collections/AsRunLog'
 import { ExpectedMediaItems } from '../../lib/collections/ExpectedMediaItems'
 import { ExpectedPlayoutItems } from '../../lib/collections/ExpectedPlayoutItems'
 import { Timeline } from '../../lib/collections/Timeline'
-import { rundownContentAllowWrite } from './rundown'
+import { rundownContentAllowWrite, pieceContentAllowWrite } from './rundown'
 import { SystemReadAccess, SystemWriteAccess } from './system'
 import { Buckets } from '../../lib/collections/Buckets'
 import { studioContentAllowWrite } from './studio'
@@ -53,7 +51,7 @@ CoreSystem.allow({
 	update(userId, doc, fields, modifier) {
 		const access = allowAccessToCoreSystem({ userId: userId })
 		if (!access.update) return logNotAllowed('CoreSystem', access.reason)
-		return allowOnlyFields(doc, fields, ['support', 'systemInfo', 'name'])
+		return allowOnlyFields(doc, fields, ['support', 'systemInfo', 'name', 'apm', 'cron'])
 	},
 	remove() {
 		return false
@@ -183,18 +181,6 @@ ExternalMessageQueue.allow({
 	},
 })
 
-RecordedFiles.allow({
-	insert(userId, doc): boolean {
-		return false
-	},
-	update(userId, doc, fields, modifier) {
-		// return true // tmp!
-		return false
-	},
-	remove(userId, doc) {
-		return false
-	},
-})
 MediaObjects.allow({
 	insert(userId, doc): boolean {
 		return false
@@ -391,13 +377,13 @@ PartInstances.allow({
 })
 Pieces.allow({
 	insert(userId, doc): boolean {
-		return rundownContentAllowWrite(userId, doc)
+		return pieceContentAllowWrite(userId, doc)
 	},
 	update(userId, doc) {
-		return rundownContentAllowWrite(userId, doc)
+		return pieceContentAllowWrite(userId, doc)
 	},
 	remove(userId, doc) {
-		return rundownContentAllowWrite(userId, doc)
+		return pieceContentAllowWrite(userId, doc)
 	},
 })
 PieceInstances.allow({
@@ -435,17 +421,6 @@ RundownBaselineAdLibPieces.allow({
 })
 IngestDataCache.allow({
 	insert(userId, doc: IngestDataCacheObj): boolean {
-		return rundownContentAllowWrite(userId, doc)
-	},
-	update(userId, doc) {
-		return rundownContentAllowWrite(userId, doc)
-	},
-	remove(userId, doc) {
-		return rundownContentAllowWrite(userId, doc)
-	},
-})
-AsRunLog.allow({
-	insert(userId, doc: AsRunLogEvent): boolean {
 		return rundownContentAllowWrite(userId, doc)
 	},
 	update(userId, doc) {

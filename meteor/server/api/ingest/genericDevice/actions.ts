@@ -6,8 +6,8 @@ import { WrapAsyncCallback } from '../../../../lib/lib'
 import { logger } from '../../../logging'
 import { PeripheralDeviceAPI } from '../../../../lib/api/peripheralDevice'
 import * as _ from 'underscore'
-import { IngestRundown, IngestSegment } from 'tv-automation-sofie-blueprints-integration'
-import { handleUpdatedSegment, handleUpdatedRundown } from '../rundownInput'
+import { IngestRundown, IngestSegment } from '@sofie-automation/blueprints-integration'
+import { handleRemovedSegment, handleUpdatedSegment, handleUpdatedRundown } from '../rundownInput'
 import { Segment } from '../../../../lib/collections/Segments'
 
 export namespace GenericDeviceActions {
@@ -21,7 +21,7 @@ export namespace GenericDeviceActions {
 	): void {
 		logger.info('reloadRundown ' + rundown._id)
 
-		PeripheralDeviceAPI.executeFunction(
+		PeripheralDeviceAPI.executeFunctionWithCustomTimeout(
 			peripheralDevice._id,
 			(err: Error, ingestRundown: IngestRundown | null) => {
 				if (err) {
@@ -53,7 +53,7 @@ export namespace GenericDeviceActions {
 							// 	throw new Meteor.Error(401, iNewsRunningOrder)
 							// }
 
-							handleUpdatedRundown(peripheralDevice, ingestRundown, 'triggerReloadRundown reply')
+							handleUpdatedRundown(undefined, peripheralDevice, ingestRundown, true)
 
 							cb(null, TriggerReloadDataResponse.COMPLETED)
 						}
@@ -62,6 +62,7 @@ export namespace GenericDeviceActions {
 					}
 				}
 			},
+			10 * 1000, // 10 seconds, sometimes the NRCS is pretty slow in returning a response
 			'triggerReloadRundown',
 			rundown.externalId
 		)
@@ -83,6 +84,7 @@ export namespace GenericDeviceActions {
 			(err: Error, ingestSegment: IngestSegment | null) => {
 				if (err) {
 					if (_.isString(err) && err.match(/segment does not exist/i)) {
+						handleRemovedSegment(peripheralDevice, rundown.externalId, segment.externalId)
 						// Don't throw an error, instead return MISSING value
 						cb(null, TriggerReloadDataResponse.MISSING)
 					} else {
@@ -107,7 +109,7 @@ export namespace GenericDeviceActions {
 								)
 							}
 
-							handleUpdatedSegment(peripheralDevice, rundown.externalId, ingestSegment)
+							handleUpdatedSegment(peripheralDevice, rundown.externalId, ingestSegment, true)
 
 							cb(null, TriggerReloadDataResponse.COMPLETED)
 						}

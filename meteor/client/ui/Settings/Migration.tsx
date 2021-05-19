@@ -8,7 +8,7 @@ import { faClipboardCheck, faDatabase, faCoffee, faEye, faEyeSlash } from '@fort
 import { Meteor } from 'meteor/meteor'
 import { logger } from '../../../lib/logging'
 import { GetMigrationStatusResult, RunMigrationResult, MigrationChunk } from '../../../lib/api/migration'
-import { MigrationStepInput, MigrationStepInputResult } from 'tv-automation-sofie-blueprints-integration'
+import { MigrationStepInput, MigrationStepInputResult } from '@sofie-automation/blueprints-integration'
 import * as _ from 'underscore'
 import { EditAttribute, EditAttributeBase } from '../../lib/EditAttribute'
 import { MeteorCall } from '../../../lib/api/methods'
@@ -96,7 +96,6 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 				.getMigrationStatus()
 				.then((r: GetMigrationStatusResult) => {
 					if (this.cancelRequests) return
-					console.log(r)
 
 					let inputValues = this.state.inputValues
 					_.each(r.migration.manualInputs, (manualInput: MigrationStepInput) => {
@@ -285,7 +284,8 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 									className="btn mrm"
 									onClick={() => {
 										this.clickRefresh()
-									}}>
+									}}
+								>
 									<FontAwesomeIcon icon={faClipboardCheck} />
 									<span>{t('Re-check')}</span>
 								</button>
@@ -310,7 +310,8 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 										className="btn mrm"
 										onClick={() => {
 											this.resetDatabaseVersions()
-										}}>
+										}}
+									>
 										<FontAwesomeIcon icon={faDatabase} />
 										<span>{t('Reset All Versions')}</span>
 									</button>
@@ -332,12 +333,14 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 										<tr
 											className={ClassNames({
 												hl: this.state.showAllSteps,
-											})}>
+											})}
+										>
 											<th className="c3">{t('All steps')}</th>
 											<td className="table-item-actions c3">
 												<button
 													className="action-btn"
-													onClick={(e) => this.setState({ showAllSteps: !this.state.showAllSteps })}>
+													onClick={(e) => this.setState({ showAllSteps: !this.state.showAllSteps })}
+												>
 													<FontAwesomeIcon icon={this.state.showAllSteps ? faEyeSlash : faEye} />
 												</button>
 											</td>
@@ -375,7 +378,8 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 											className="btn btn-primary"
 											onClick={() => {
 												this.runMigration()
-											}}>
+											}}
+										>
 											<FontAwesomeIcon icon={faDatabase} />
 											<span>{t('Run automatic migration procedure')}</span>
 										</button>
@@ -396,7 +400,8 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 														this.runMigration()
 													},
 												})
-											}}>
+											}}
+										>
 											<FontAwesomeIcon icon={faClipboardCheck} />
 											<span>{t('Run Migration Procedure')}</span>
 										</button>
@@ -434,7 +439,8 @@ export const MigrationView = translateWithTracker<IProps, IState, ITrackedProps>
 															this.forceMigration()
 														},
 													})
-												}}>
+												}}
+											>
 												<FontAwesomeIcon icon={faDatabase} />
 												<span>{t('Force Migration (unsafe)')}</span>
 											</button>

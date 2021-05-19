@@ -1,25 +1,38 @@
 import { Meteor } from 'meteor/meteor'
 import { Random } from 'meteor/random'
 import * as _ from 'underscore'
-import {
-	TransformedCollection,
-	MongoQuery,
-	MongoModifier,
-	UpdateOptions,
-	UpsertOptions,
-	FindOptions,
-} from './typings/meteor'
+import { TransformedCollection, MongoQuery, MongoModifier, FindOptions } from './typings/meteor'
 import { logger } from './logging'
 import { Timecode } from 'timecode'
 import { Settings } from './Settings'
 import * as objectPath from 'object-path'
-import { iterateDeeply, iterateDeeplyEnum } from 'tv-automation-sofie-blueprints-integration'
+import { iterateDeeply, iterateDeeplyEnum } from '@sofie-automation/blueprints-integration'
 import * as crypto from 'crypto'
+import { ReadonlyDeep, PartialDeep } from 'type-fest'
+import { ITranslatableMessage } from './api/TranslatableMessage'
+
 const cloneOrg = require('fast-clone')
 
-export function clone<T>(o: T): T {
+export type Subtract<T extends T1, T1 extends object> = Pick<T, Exclude<keyof T, keyof T1>>
+/** Deep clones a value */
+export function clone<T>(o: ReadonlyDeep<T> | Readonly<T> | T): T {
 	// Use this instead of fast-clone directly, as this retains the type
 	return cloneOrg(o)
+}
+
+export function flatten<T>(vals: Array<T[] | undefined>): T[] {
+	return _.flatten(
+		vals.filter((v) => v !== undefined),
+		true
+	)
+}
+
+export function max<T>(vals: T[], iterator: _.ListIterator<T, any>): T | undefined {
+	if (vals.length <= 1) {
+		return vals[0]
+	} else {
+		return _.max(vals, iterator)
+	}
 }
 
 export function getHash(str: string): string {
@@ -29,9 +42,36 @@ export function getHash(str: string): string {
 		.digest('base64')
 		.replace(/[\+\/\=]/g, '_') // remove +/= from strings, because they cause troubles
 }
+/** Creates a hash based on the object properties (excluding ordering of properties) */
+export function hashObj(obj: any): string {
+	if (typeof obj === 'object') {
+		const keys = Object.keys(obj).sort((a, b) => {
+			if (a > b) return 1
+			if (a < b) return -1
+			return 0
+		})
+
+		const strs: string[] = []
+		for (const key of keys) {
+			strs.push(hashObj(obj[key]))
+		}
+		return getHash(strs.join('|'))
+	}
+	return obj + ''
+}
 
 export function getRandomId<T>(numberOfChars?: number): ProtectedString<T> {
 	return Random.id(numberOfChars) as any
+}
+
+export function applyToArray<T>(arr: T | T[], func: (val: T) => void) {
+	if (Array.isArray(arr)) {
+		for (const val of arr) {
+			func(val)
+		}
+	} else {
+		func(arr)
+	}
 }
 
 /**
@@ -49,8 +89,10 @@ export function MeteorPromiseCall(callName: string, ...args: any[]): Promise<any
 }
 
 export type Time = number
+export type TimeDuration = number
 
 const systemTime = {
+	hasBeenSet: false,
 	diff: 0,
 	stdDev: 9999,
 }
@@ -67,292 +109,17 @@ export interface DBObj {
 	_id: ProtectedString<any>
 	[key: string]: any
 }
-interface SaveIntoDbOptions<DocClass, DBInterface> {
-	beforeInsert?: (o: DBInterface) => DBInterface
-	beforeUpdate?: (o: DBInterface, pre?: DocClass) => DBInterface
-	beforeRemove?: (o: DocClass) => DBInterface
-	beforeDiff?: (o: DBInterface, oldObj: DocClass) => DBInterface
-	insert?: (o: DBInterface) => void
-	update?: (id: ProtectedString<any>, o: DBInterface) => void
-	remove?: (o: DBInterface) => void
-	unchanged?: (o: DBInterface) => void
-	afterInsert?: (o: DBInterface) => void
-	afterUpdate?: (o: DBInterface) => void
-	afterRemove?: (o: DBInterface) => void
-	afterRemoveAll?: (o: Array<DBInterface>) => void
-}
-interface Changes {
-	added: number
-	updated: number
-	removed: number
-}
-/**
- * Saves an array of data into a collection
- * No matter if the data needs to be created, updated or removed
- * @param collection The collection to be updated
- * @param filter The filter defining the data subset to be affected in db
- * @param newData The new data
- */
-export function saveIntoDb<DocClass extends DBInterface, DBInterface extends DBObj>(
-	collection: TransformedCollection<DocClass, DBInterface>,
-	filter: MongoQuery<DBInterface>,
-	newData: Array<DBInterface>,
-	options?: SaveIntoDbOptions<DocClass, DBInterface>
-): Changes {
-	const preparedChanges = prepareSaveIntoDb(collection, filter, newData, options)
 
-	return savePreparedChanges(preparedChanges, collection, options)
-}
-export interface PreparedChanges<T> {
-	inserted: T[]
-	changed: PreparedChangesChangesDoc<T>[]
-	removed: T[]
-	unchanged: T[]
-}
-
-export interface PreparedChangesChangesDoc<T> {
-	doc: T
-	oldId: ProtectedString<any>
-}
-export function prepareSaveIntoDb<DocClass extends DBInterface, DBInterface extends DBObj>(
-	collection: TransformedCollection<DocClass, DBInterface>,
-	filter: MongoQuery<DBInterface>,
-	newData: Array<DBInterface>,
-	optionsOrg?: SaveIntoDbOptions<DocClass, DBInterface>
-): PreparedChanges<DBInterface> {
-	let preparedChanges: PreparedChanges<DBInterface> = {
-		inserted: [],
-		changed: [],
-		removed: [],
-		unchanged: [],
-	}
-
-	const options: SaveIntoDbOptions<DocClass, DBInterface> = optionsOrg || {}
-
-	const identifier = '_id'
-
-	const pOldObjs = asyncCollectionFindFetch(collection, filter)
-
-	const newObjIds: { [identifier: string]: true } = {}
-	_.each(newData, (o) => {
-		if (newObjIds[o[identifier] as any]) {
-			throw new Meteor.Error(
-				500,
-				`prepareSaveIntoDb into collection "${
-					(collection as any)._name
-				}": Duplicate identifier ${identifier}: "${o[identifier]}"`
-			)
-		}
-		newObjIds[o[identifier] as any] = true
-	})
-
-	const oldObjs: Array<DocClass> = waitForPromise(pOldObjs)
-
-	const removeObjs: { [id: string]: DocClass } = {}
-	_.each(oldObjs, (o: DocClass) => {
-		if (removeObjs['' + o[identifier]]) {
-			// duplicate id:
-			preparedChanges.removed.push(o)
-		} else {
-			removeObjs['' + o[identifier]] = o
-		}
-	})
-
-	_.each(newData, function(o) {
-		const oldObj = removeObjs['' + o[identifier]]
-		if (oldObj) {
-			const o2 = options.beforeDiff ? options.beforeDiff(o, oldObj) : o
-			const eql = compareObjs(oldObj, o2)
-
-			if (!eql) {
-				let oUpdate = options.beforeUpdate ? options.beforeUpdate(o, oldObj) : o
-				preparedChanges.changed.push({ doc: oUpdate, oldId: oldObj._id })
-			} else {
-				preparedChanges.unchanged.push(oldObj)
-			}
-		} else {
-			if (!_.isNull(oldObj)) {
-				let oInsert = options.beforeInsert ? options.beforeInsert(o) : o
-				preparedChanges.inserted.push(oInsert)
-			}
-		}
-		delete removeObjs['' + o[identifier]]
-	})
-	_.each(removeObjs, function(obj: DocClass) {
-		if (obj) {
-			let oRemove: DBInterface = options.beforeRemove ? options.beforeRemove(obj) : obj
-			preparedChanges.removed.push(oRemove)
-		}
-	})
-	return preparedChanges
-}
-export function savePreparedChanges<DocClass extends DBInterface, DBInterface extends DBObj>(
-	preparedChanges: PreparedChanges<DBInterface>,
-	collection: TransformedCollection<DocClass, DBInterface>,
-	optionsOrg?: SaveIntoDbOptions<DocClass, DBInterface>
-) {
-	let change: Changes = {
-		added: 0,
-		updated: 0,
-		removed: 0,
-	}
-	const options: SaveIntoDbOptions<DocClass, DBInterface> = optionsOrg || {}
-
-	const ps: Array<Promise<any>> = []
-
-	const newObjIds: { [identifier: string]: true } = {}
-	const checkInsertId = (id) => {
-		if (newObjIds[id]) {
-			throw new Meteor.Error(
-				500,
-				`savePreparedChanges into collection "${(collection as any)._name}": Duplicate identifier "${id}"`
-			)
-		}
-		newObjIds[id] = true
-	}
-
-	_.each(preparedChanges.changed || [], (oUpdate) => {
-		checkInsertId(oUpdate.doc._id)
-		let p: Promise<any> | undefined
-		if (options.update) {
-			options.update(oUpdate.oldId, oUpdate.doc)
-		} else {
-			p = asyncCollectionUpdate(collection, oUpdate.oldId, oUpdate.doc)
-		}
-		if (options.afterUpdate) {
-			p = Promise.resolve(p).then(() => {
-				if (options.afterUpdate) options.afterUpdate(oUpdate.doc)
-			})
-		}
-
-		if (p) ps.push(p)
-		change.updated++
-	})
-
-	_.each(preparedChanges.inserted || [], (oInsert) => {
-		checkInsertId(oInsert._id)
-		let p: Promise<any> | undefined
-		if (options.insert) {
-			options.insert(oInsert)
-		} else {
-			p = asyncCollectionInsert(collection, oInsert)
-		}
-		if (options.afterInsert) {
-			p = Promise.resolve(p).then(() => {
-				if (options.afterInsert) options.afterInsert(oInsert)
-			})
-		}
-		if (p) ps.push(p)
-		change.added++
-	})
-
-	_.each(preparedChanges.removed || [], (oRemove) => {
-		let p: Promise<any> | undefined
-		if (options.remove) {
-			options.remove(oRemove)
-		} else {
-			p = asyncCollectionRemove(collection, oRemove._id)
-		}
-
-		if (options.afterRemove) {
-			p = Promise.resolve(p).then(() => {
-				if (options.afterRemove) options.afterRemove(oRemove)
-			})
-		}
-		if (p) ps.push(p)
-		change.removed++
-	})
-	if (options.unchanged) {
-		_.each(preparedChanges.unchanged || [], (o) => {
-			if (options.unchanged) options.unchanged(o)
-		})
-	}
-	waitForPromiseAll(ps)
-
-	if (options.afterRemoveAll) {
-		const objs = _.compact(preparedChanges.removed || [])
-		if (objs.length > 0) {
-			options.afterRemoveAll(objs)
-		}
-	}
-
-	return change
-}
-export function sumChanges(...changes: (Changes | null)[]): Changes {
-	let change: Changes = {
-		added: 0,
-		updated: 0,
-		removed: 0,
-	}
-	_.each(changes, (c) => {
-		if (c) {
-			change.added += c.added
-			change.updated += c.updated
-			change.removed += c.removed
-		}
-	})
-	return change
-}
-export function anythingChanged(changes: Changes): boolean {
-	return !!(changes.added || changes.removed || changes.updated)
-}
-/**
- * Deep comparison of objects, returns true if equal
- * @param a
- * @param b
- * @param onlyKeysFromA If true, only uses the keys of (a) for comparison
- * @param omit Array of keys to omit in the comparison
- */
-export function compareObjs(a: any, b: any, onlyKeysFromA?: boolean, omit?: Array<string>): boolean {
-	// let omit = ['_id','type','created','owner','OP','disabled']
-	omit = omit || []
-
-	let a0 = _.omit(a, omit)
-	let b0 = _.omit(b, omit)
-
-	let simpleCompare = (a: any, b: any, trace?: string) => {
-		if (!trace) trace = ''
-		let different: boolean | string = false
-
-		if (_.isObject(a)) {
-			if (_.isObject(b)) {
-				let keys = onlyKeysFromA ? _.keys(a) : _.union(_.keys(a), _.keys(b))
-
-				_.each(keys, (key) => {
-					if (different === false) {
-						different = simpleCompare(a[key], b[key], trace + '.' + key)
-					}
-				})
-			} else different = trace + '>object'
-		} else if (_.isArray(a)) {
-			if (_.isArray(b) && a.length === b.length) {
-				_.each(a, (val0, key) => {
-					if (different === false) {
-						different = simpleCompare(a[key], b[key], trace + '[' + key + ']')
-					}
-				})
-			} else different = trace + '>array'
-		} else {
-			if (a !== b) different = trace + '(' + a + '!==' + b + ')'
-		}
-
-		return different
-	}
-
-	let diff = simpleCompare(a0, b0)
-
-	return !diff
-}
 export function literal<T>(o: T) {
 	return o
 }
 export type Partial<T> = {
 	[P in keyof T]?: T[P]
 }
+export type ArrayElement<A> = A extends readonly (infer T)[] ? T : never
 export function partial<T>(o: Partial<T>) {
 	return o
 }
-export type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>
 export interface IDObj {
 	_id: ProtectedString<any>
 }
@@ -362,13 +129,10 @@ export function partialExceptId<T>(o: Partial<T> & IDObj) {
 export interface ObjId {
 	_id: ProtectedString<any>
 }
-export type OmitId<T> = Omit<T & ObjId, '_id'>
 
 export function omit<T, P extends keyof T>(obj: T, ...props: P[]): Omit<T, P> {
 	return _.omit(obj, ...(props as string[]))
 }
-
-export type ReturnType<T extends Function> = T extends (...args: any[]) => infer R ? R : never
 
 export function applyClassToDocument(docClass, document) {
 	return new docClass(document)
@@ -478,66 +242,25 @@ export const Collections: { [name: string]: TransformedCollection<any, any> } = 
 export function registerCollection(name: string, collection: TransformedCollection<any, any>) {
 	Collections[name] = collection
 }
-export const getCollectionIndexes: (collection: TransformedCollection<any, any>) => Array<any> = Meteor.wrapAsync(
-	function getCollectionIndexes(collection: TransformedCollection<any, any>, cb) {
-		let raw = collection.rawCollection()
-		raw.indexes(cb)
-	}
-)
+// export const getCollectionIndexes: (collection: TransformedCollection<any, any>) => Array<any> = Meteor.wrapAsync(
+// 	function getCollectionIndexes(collection: TransformedCollection<any, any>, cb) {
+// 		let raw = collection.rawCollection()
+// 		raw.indexes(cb) // TODO - invalid
+// 	}
+// )
 export const getCollectionStats: (collection: TransformedCollection<any, any>) => Array<any> = Meteor.wrapAsync(
 	function getCollectionStats(collection: TransformedCollection<any, any>, cb) {
 		let raw = collection.rawCollection()
 		raw.stats(cb)
 	}
 )
-export function fetchBefore<T>(
-	collection: TransformedCollection<T, any>,
-	selector: MongoQuery<T> = {},
-	rank: number = Number.POSITIVE_INFINITY
-): T {
-	return collection
-		.find(
-			_.extend(selector, {
-				_rank: { $lt: rank },
-			}),
-			{
-				sort: {
-					_rank: -1,
-					_id: -1,
-				},
-				limit: 1,
-			}
-		)
-		.fetch()[0]
-}
-export function fetchNext<T extends { _id: ProtectedString<any> }>(
-	values: Array<T>,
-	currentValue: T | undefined
-): T | undefined {
-	if (!currentValue) return values[0]
 
-	let nextValue: T | undefined
-	let found: boolean = false
-	return _.find(values, (value) => {
-		if (found) {
-			nextValue = value
-			return true
-		}
-
-		if (currentValue._id) {
-			found = currentValue._id === value._id
-		} else {
-			found = currentValue === value
-		}
-		return false
-	})
-}
 /**
  * Returns a rank number, to be used to insert new objects in a ranked list
- * @param before	Object before, null/undefined if inserted first
- * @param after			Object after, null/undefined if inserted last
- * @param i				If inserting multiple objects, this is the number of this object
- * @param count			If inserting multiple objects, this is total count of objects
+ * @param before   The element before the one-to-be-inserted, null/undefined if inserted first
+ * @param after	   The element after the one-to-be-inserted, null/undefined if inserted last
+ * @param i        If inserting multiple elements; the internal rank of the to-be-inserted element
+ * @param count    If inserting multiple elements, this is total count of inserted elements
  */
 export function getRank<T extends { _rank: number }>(
 	before: T | null | undefined,
@@ -545,8 +268,8 @@ export function getRank<T extends { _rank: number }>(
 	i: number = 0,
 	count: number = 1
 ): number {
-	let newRankMax
-	let newRankMin
+	let newRankMax: number
+	let newRankMin: number
 
 	if (after) {
 		if (before) {
@@ -570,6 +293,20 @@ export function getRank<T extends { _rank: number }>(
 	}
 	return newRankMin + ((i + 1) / (count + 1)) * (newRankMax - newRankMin)
 }
+
+export function normalizeArrayFuncFilter<T>(
+	array: Array<T>,
+	getKey: (o: T) => string | undefined
+): { [indexKey: string]: T } {
+	const normalizedObject: any = {}
+	for (let i = 0; i < array.length; i++) {
+		const key = getKey(array[i])
+		if (key !== undefined) {
+			normalizedObject[key] = array[i]
+		}
+	}
+	return normalizedObject as { [key: string]: T }
+}
 export function normalizeArrayFunc<T>(array: Array<T>, getKey: (o: T) => string): { [indexKey: string]: T } {
 	const normalizedObject: any = {}
 	for (let i = 0; i < array.length; i++) {
@@ -586,111 +323,20 @@ export function normalizeArray<T>(array: Array<T>, indexKey: keyof T): { [indexK
 	}
 	return normalizedObject as { [key: string]: T }
 }
+export function normalizeArrayToMap<T, K extends keyof T>(array: T[], indexKey: K): Map<T[K], T> {
+	const normalizedObject = new Map<T[K], T>()
+	for (const item of array) {
+		const key = item[indexKey]
+		normalizedObject.set(key, item)
+	}
+	return normalizedObject
+}
+
 /** Convenience function, to be used when length of array has previously been verified */
 export function last<T>(values: T[]): T {
 	return _.last(values) as T
 }
 
-const rateLimitCache: { [name: string]: number } = {}
-export function rateLimit(name: string, f1: Function, f2: Function, t: number) {
-	// if time t has passed since last call, run f1(), otherwise run f2()
-	if (Math.random() < 0.05) Meteor.setTimeout(cleanUpRateLimit, 10000)
-
-	if (rateLimitCache[name] && Math.abs(Date.now() - rateLimitCache[name]) < t) {
-		if (f2) return f2()
-		return null
-	}
-
-	rateLimitCache[name] = Date.now()
-	if (f1) return f1()
-
-	return null
-}
-function cleanUpRateLimit() {
-	const now = Date.now()
-	const maxTime = 1000
-	for (const name in rateLimitCache) {
-		if (rateLimitCache[name] && Math.abs(now - rateLimitCache[name]) > maxTime) {
-			delete rateLimitCache[name]
-		}
-	}
-}
-
-const rateLimitAndDoItLaterCache: { [name: string]: number } = {}
-export function rateLimitAndDoItLater(name: string, f1: Function, limit: number) {
-	// if time *limit* has passed since last call, run f1(), otherwise run f1 later
-	if (Math.random() < 0.05) Meteor.setTimeout(cleanUprateLimitAndDoItLater, 10000)
-
-	const timeSinceLast = Date.now() - (rateLimitAndDoItLaterCache[name] || 0)
-
-	if (timeSinceLast > limit) {
-		// do it right away:
-		rateLimitAndDoItLaterCache[name] = Date.now()
-		f1()
-		return true
-	} else {
-		// do it later
-		rateLimitAndDoItLaterCache[name] += limit
-		Meteor.setTimeout(f1, Date.now() - rateLimitAndDoItLaterCache[name])
-
-		return false
-	}
-}
-function cleanUprateLimitAndDoItLater() {
-	const now = Date.now()
-	for (const name in rateLimitAndDoItLaterCache) {
-		if (rateLimitAndDoItLaterCache[name] && rateLimitAndDoItLaterCache[name] < now - 100) {
-			delete rateLimitAndDoItLaterCache[name]
-		}
-	}
-}
-
-const rateLimitIgnoreCache: { [name: string]: number } = {}
-export function rateLimitIgnore(name: string, f1: Function, limit: number) {
-	// if time *limit* has passed since function was last run, run it right away.
-	// Otherwise, set it to run in some time
-	// If the function is set to run in the future, additional calls will be ignored.
-
-	if (Math.random() < 0.05) Meteor.setTimeout(cleanUprateLimitIgnore, 10 * 1000)
-
-	const timeSinceLast = Date.now() - (rateLimitIgnoreCache[name] || 0)
-
-	if (timeSinceLast > limit) {
-		// do it right away:
-
-		rateLimitIgnoreCache[name] = Date.now()
-		f1()
-		return 1
-	} else {
-		// do it later:
-
-		const lastTime = rateLimitIgnoreCache[name]
-		const nextTime = lastTime + limit
-
-		// is there a timeout set?
-		if (!rateLimitIgnoreCache[name + '_timeout']) {
-			rateLimitIgnoreCache[name + '_timeout'] = Meteor.setTimeout(() => {
-				delete rateLimitIgnoreCache[name + '_timeout']
-
-				f1()
-
-				rateLimitIgnoreCache[name] = Date.now()
-			}, nextTime - Date.now() || 0)
-			return 0
-		} else {
-			// there is already a timeout on it's way, ignore this call then.
-			return -1
-		}
-	}
-}
-function cleanUprateLimitIgnore() {
-	const now = Date.now()
-	for (const name in rateLimitIgnoreCache) {
-		if (rateLimitIgnoreCache[name] && rateLimitIgnoreCache[name] < now - 100) {
-			delete rateLimitIgnoreCache[name]
-		}
-	}
-}
 const cacheResultCache: {
 	[name: string]: {
 		ttl: number
@@ -721,6 +367,19 @@ function cleanOldCacheResult() {
 	_.each(cacheResultCache, (cache, name) => {
 		if (cache.ttl < Date.now()) clearCacheResult(name)
 	})
+}
+const lazyIgnoreCache: { [name: string]: number } = {}
+export function lazyIgnore(name: string, f1: () => void, t: number): void {
+	// Don't execute the function f1 until the time t has passed.
+	// Subsequent calls will extend the lazyness and ignore the previous call
+
+	if (lazyIgnoreCache[name]) {
+		Meteor.clearTimeout(lazyIgnoreCache[name])
+	}
+	lazyIgnoreCache[name] = Meteor.setTimeout(() => {
+		delete lazyIgnoreCache[name]
+		f1()
+	}, t)
 }
 
 export function escapeHtml(text: string): string {
@@ -775,109 +434,6 @@ export function toc(name: string = 'default', logStr?: string | Promise<any>[]) 
 	}
 }
 
-export function asyncCollectionFindFetch<
-	DocClass extends DBInterface,
-	DBInterface extends { _id: ProtectedString<any> }
->(
-	collection: TransformedCollection<DocClass, DBInterface>,
-	selector: MongoQuery<DBInterface> | string,
-	options?: FindOptions<DBInterface>
-): Promise<Array<DocClass>> {
-	// Make the collection fethcing in another Fiber:
-	const p = makePromise(() => {
-		return collection.find(selector as any, options).fetch()
-	})
-	// Pause the current Fiber briefly, in order to allow for the other Fiber to start executing:
-	waitTime(0)
-	return p
-}
-export function asyncCollectionFindOne<DocClass extends DBInterface, DBInterface extends { _id: ProtectedString<any> }>(
-	collection: TransformedCollection<DocClass, DBInterface>,
-	selector: MongoQuery<DBInterface> | string
-): Promise<DocClass | undefined> {
-	return asyncCollectionFindFetch(collection, selector).then((arr) => {
-		return arr[0]
-	})
-}
-export function asyncCollectionInsert<DocClass extends DBInterface, DBInterface extends { _id: ProtectedString<any> }>(
-	collection: TransformedCollection<DocClass, DBInterface>,
-	doc: DBInterface
-): Promise<string> {
-	return new Promise((resolve, reject) => {
-		collection.insert(doc, (err: any, idInserted) => {
-			if (err) reject(err)
-			else resolve(idInserted)
-		})
-	})
-}
-export function asyncCollectionInsertMany<
-	DocClass extends DBInterface,
-	DBInterface extends { _id: ProtectedString<any> }
->(collection: TransformedCollection<DocClass, DBInterface>, docs: DBInterface[]): Promise<string[]> {
-	return Promise.all(_.map(docs, (doc) => asyncCollectionInsert(collection, doc)))
-}
-/** Insert document, and ignore if document already exists */
-export function asyncCollectionInsertIgnore<
-	DocClass extends DBInterface,
-	DBInterface extends { _id: ProtectedString<any> }
->(collection: TransformedCollection<DocClass, DBInterface>, doc: DBInterface): Promise<string> {
-	return new Promise((resolve, reject) => {
-		collection.insert(doc, (err: any, idInserted) => {
-			if (err) {
-				if (err.toString().match(/duplicate key/i)) {
-					// @ts-ignore id duplicate, doc._id must exist
-					resolve(doc._id)
-				} else {
-					reject(err)
-				}
-			} else resolve(idInserted)
-		})
-	})
-}
-export function asyncCollectionUpdate<DocClass extends DBInterface, DBInterface extends { _id: ProtectedString<any> }>(
-	collection: TransformedCollection<DocClass, DBInterface>,
-	selector: MongoQuery<DBInterface> | ProtectedString<any>,
-	modifier: MongoModifier<DBInterface>,
-	options?: UpdateOptions
-): Promise<number> {
-	return new Promise((resolve, reject) => {
-		collection.update(selector, modifier, options, (err: any, affectedCount: number) => {
-			if (err) reject(err)
-			else resolve(affectedCount)
-		})
-	})
-}
-
-export function asyncCollectionUpsert<DocClass extends DBInterface, DBInterface extends { _id: ProtectedString<any> }>(
-	collection: TransformedCollection<DocClass, DBInterface>,
-	selector: MongoQuery<DBInterface> | ProtectedString<any>,
-	modifier: MongoModifier<DBInterface>,
-	options?: UpsertOptions
-): Promise<{ numberAffected: number; insertedId: string }> {
-	return new Promise((resolve, reject) => {
-		collection.upsert(
-			selector,
-			modifier,
-			options,
-			(err: any, returnValue: { numberAffected: number; insertedId: string }) => {
-				if (err) reject(err)
-				else resolve(returnValue)
-			}
-		)
-	})
-}
-
-export function asyncCollectionRemove<DocClass extends DBInterface, DBInterface extends { _id: ProtectedString<any> }>(
-	collection: TransformedCollection<DocClass, DBInterface>,
-	selector: MongoQuery<DBInterface> | ProtectedString<any>
-): Promise<void> {
-	return new Promise((resolve, reject) => {
-		collection.remove(selector, (err: any) => {
-			if (err) reject(err)
-			else resolve()
-		})
-	})
-}
 /**
  * Supresses the "UnhandledPromiseRejectionWarning" warning
  * ref: https://stackoverflow.com/questions/40920179/should-i-refrain-from-handling-promise-rejection-asynchronously
@@ -891,6 +447,19 @@ export const caught: <T>(v: Promise<T>) => Promise<T> = ((f) => (p) => (p.catch(
 /**
  * Blocks the fiber until all the Promises have resolved
  */
+export function waitForPromiseAll<T1, T2, T3, T4, T5, T6>(
+	ps: [
+		T1 | PromiseLike<T1>,
+		T2 | PromiseLike<T2>,
+		T3 | PromiseLike<T3>,
+		T4 | PromiseLike<T4>,
+		T5 | PromiseLike<T5>,
+		T6 | PromiseLike<T6>
+	]
+): [T1, T2, T3, T4, T5, T6]
+export function waitForPromiseAll<T1, T2, T3, T4, T5>(
+	ps: [T1 | PromiseLike<T1>, T2 | PromiseLike<T2>, T3 | PromiseLike<T3>, T4 | PromiseLike<T4>, T5 | PromiseLike<T5>]
+): [T1, T2, T3, T4, T5]
 export function waitForPromiseAll<T1, T2, T3, T4>(
 	ps: [T1 | PromiseLike<T1>, T2 | PromiseLike<T2>, T3 | PromiseLike<T3>, T4 | PromiseLike<T4>]
 ): [T1, T2, T3, T4]
@@ -914,11 +483,16 @@ export function waitForPromiseObj<T extends object>(obj: Promisify<T>): T {
  * Makes the Fiber wait for the promise to resolve, then return the value of the promise.
  * If the fiber rejects, the function in the Fiber will "throw"
  */
-export const waitForPromise: <T>(p: Promise<T>) => T = Meteor.wrapAsync(function waitForPromises<T>(
-	p: Promise<T>,
+export const waitForPromise: <T>(p: Promise<T> | T) => T = Meteor.wrapAsync(function waitForPromise<T>(
+	p: Promise<T> | T,
 	cb: (err: any | null, result?: any) => T
 ) {
 	if (Meteor.isClient) throw new Meteor.Error(500, `waitForPromise can't be used client-side`)
+	if (cb === undefined && typeof p === 'function') {
+		cb = p as any
+		p = undefined as any
+	}
+
 	Promise.resolve(p)
 		.then((result) => {
 			cb(null, result)
@@ -944,6 +518,11 @@ export function makePromise<T>(fcn: () => T): Promise<T> {
 }
 
 export function mongoWhere<T>(o: any, selector: MongoQuery<T>): boolean {
+	if (typeof selector !== 'object') {
+		// selector must be an object
+		return false
+	}
+
 	let ok = true
 	_.each(selector, (s: any, key: string) => {
 		if (!ok) return
@@ -990,7 +569,7 @@ export function mongoWhere<T>(o: any, selector: MongoQuery<T>): boolean {
 					} else if (_.has(s, '$nin')) {
 						ok = s.$nin.indexOf(oAttr) === -1
 					} else if (_.has(s, '$exists')) {
-						ok = key in o === !!s.$exists
+						ok = (o[key] !== undefined) === !!s.$exists
 					} else if (_.has(s, '$not')) {
 						let innerSelector: any = {}
 						innerSelector[key] = s.$not
@@ -1016,13 +595,12 @@ export function mongoWhere<T>(o: any, selector: MongoQuery<T>): boolean {
 	return ok
 }
 export function mongoFindOptions<Class extends DBInterface, DBInterface extends { _id?: ProtectedString<any> }>(
-	docs: Class[],
+	docs0: ReadonlyArray<Class>,
 	options?: FindOptions<DBInterface>
 ): Class[] {
+	let docs = [...docs0] // Shallow clone it
 	if (options) {
 		if (options.sort) {
-			docs = [...docs] // Shallow clone it
-
 			// Underscore doesnt support desc order, or multiple fields, so we have to do it manually
 			const keys = _.keys(options.sort).filter((k) => options.sort)
 			const doSort = (a: any, b: any, i: number): number => {
@@ -1365,10 +943,10 @@ export type WrapAsyncCallback<T> = ((error: Error) => void) & ((error: null, res
  * @param time
  */
 export function waitTime(time: number) {
-	let p = new Promise((resolve) => {
-		Meteor.setTimeout(resolve, time)
-	})
-	waitForPromise(p)
+	waitForPromise(sleep(time))
+}
+export function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => Meteor.setTimeout(resolve, ms))
 }
 
 /** Runtime-wise, this is a string.
@@ -1390,6 +968,11 @@ export function protectString<T extends ProtectedString<any>>(str: string | unde
 export function protectStringArray<T extends ProtectedString<any>>(arr: string[]): T[] {
 	return (arr as any) as T[]
 }
+export function protectStringObject<O extends object, Props extends keyof O>(
+	obj: O
+): ProtectedStringProperties<O, Props> {
+	return (obj as any) as ProtectedStringProperties<O, Props>
+}
 export function unprotectString(protectedStr: ProtectedString<any>): string
 export function unprotectString(protectedStr: ProtectedString<any> | null): string | null
 export function unprotectString(protectedStr: ProtectedString<any> | undefined): string | undefined
@@ -1399,17 +982,22 @@ export function unprotectString(protectedStr: ProtectedString<any> | undefined |
 export function unprotectStringArray(protectedStrs: Array<ProtectedString<any>>): string[] {
 	return (protectedStrs as any) as string[]
 }
+export function unDeepString<T extends ProtectedString<any>>(str: ReadonlyDeep<T> | PartialDeep<T>): T {
+	return str as T
+}
 /** Used on protectedStrings instead of _.isString or typeof x === 'string' */
 export function isProtectedString(str: any): str is ProtectedString<any> {
 	return typeof str === 'string'
 }
 export type ProtectId<T extends { _id: string }> = Omit<T, '_id'> & { _id: ProtectedString<any> }
-export type UnprotectedStringProperties<T extends object> = {
+export type UnprotectedStringProperties<T extends object | undefined> = {
 	[P in keyof T]: T[P] extends ProtectedString<any>
 		? string
 		: T[P] extends ProtectedString<any> | undefined
 		? string | undefined
-		: T[P] extends UnprotectedStringProperties<any>
+		: T[P] extends object
+		? UnprotectedStringProperties<T[P]>
+		: T[P] extends object | undefined
 		? UnprotectedStringProperties<T[P]>
 		: T[P]
 }
@@ -1426,10 +1014,74 @@ export function isStringOrProtectedString<T extends ProtectedString<any>>(val: a
 	return _.isString(val)
 }
 
+export function unpartialString<T extends ProtectedString<any>>(obj: T | PartialDeep<T>): T
+export function unpartialString<T extends ProtectedString<any>>(str: T | PartialDeep<T> | undefined): T | undefined
+export function unpartialString<T extends ProtectedString<any>>(str: T | PartialDeep<T> | undefined): T | undefined {
+	return str as any
+}
+
 export function isPromise<T extends any>(val: any): val is Promise<T> {
 	return _.isObject(val) && typeof val.then === 'function' && typeof val.catch === 'function'
 }
 
 export function assertNever(_never: never): void {
 	// Do nothing. This is a type guard
+}
+
+/**
+ * This is a fast, shallow compare of two Sets.
+ *
+ * **Note**: This is a shallow compare, so it will return false if the objects in the arrays are identical, but not the same.
+ *
+ * @param a
+ * @param b
+ */
+export function equalSets<T extends any>(a: Set<T>, b: Set<T>): boolean {
+	if (a === b) return true
+	if (a.size !== b.size) return false
+	for (let val of a.values()) {
+		if (!b.has(val)) return false
+	}
+	return true
+}
+
+/**
+ * This is a fast, shallow compare of two arrays that are used as unsorted lists. The ordering of the elements is ignored.
+ *
+ * **Note**: This is a shallow compare, so it will return false if the objects in the arrays are identical, but not the same.
+ *
+ * @param a
+ * @param b
+ */
+export function equivalentArrays<T>(a: T[], b: T[]): boolean {
+	if (a === b) return true
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) {
+		if (!b.includes(a[i])) return false
+	}
+	return true
+}
+
+/**
+ * This is a fast, shallow compare of two arrays of the same type.
+ *
+ * **Note**: This is a shallow compare, so it will return false if the objects in the arrays are identical, but not the same.
+ * @param a
+ * @param b
+ */
+export function equalArrays<T>(a: T[], b: T[]): boolean {
+	if (a === b) return true
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) {
+		if (b[i] !== a[i]) return false
+	}
+	return true
+}
+
+/** Generate the translation for a string, to be applied later when it gets rendered */
+export function generateTranslation(key: string, args?: { [k: string]: any }): ITranslatableMessage {
+	return {
+		key,
+		args,
+	}
 }

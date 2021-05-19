@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom'
 import { Studio, Studios } from '../../../lib/collections/Studios'
 import { ShowStyleBases, ShowStyleBase } from '../../../lib/collections/ShowStyleBases'
 import { ICoreSystem, CoreSystem } from '../../../lib/collections/CoreSystem'
-import { BlueprintManifestType } from 'tv-automation-sofie-blueprints-integration'
+import { BlueprintManifestType } from '@sofie-automation/blueprints-integration'
 import { NotificationCenter, Notification, NoticeLevel } from '../../lib/notifications/notifications'
 import { fetchFrom } from '../../lib/lib'
 import { UploadButton } from '../../lib/uploadButton'
@@ -110,7 +110,6 @@ export default translateWithTracker<IProps, IState, ITrackedProps>((props: IProp
 											'BlueprintSettings'
 										)
 									)
-									// console.log('Blueprint restore success')
 								})
 								.catch((err) => {
 									if (err && err.toString().endsWith('[422]')) {
@@ -151,7 +150,6 @@ export default translateWithTracker<IProps, IState, ITrackedProps>((props: IProp
 																	'BlueprintSettings'
 																)
 															)
-															// console.log('Blueprint restore success')
 														})
 														.catch((err: string) => {
 															// console.error('Blueprint restore failure: ', err)
@@ -244,7 +242,8 @@ export default translateWithTracker<IProps, IState, ITrackedProps>((props: IProp
 							<p className="mod mhn mvs">
 								<button
 									className="btn btn-primary"
-									onClick={() => this.assignSystemBlueprint(this.props.assignedSystem ? undefined : blueprint._id)}>
+									onClick={() => this.assignSystemBlueprint(this.props.assignedSystem ? undefined : blueprint._id)}
+								>
 									{this.props.assignedSystem ? t('Unassign') : t('Assign')}
 								</button>
 							</p>
@@ -278,7 +277,8 @@ export default translateWithTracker<IProps, IState, ITrackedProps>((props: IProp
 									obj={blueprint}
 									type="text"
 									collection={Blueprints}
-									className="mdinput"></EditAttribute>
+									className="mdinput"
+								></EditAttribute>
 								<span className="mdfx"></span>
 							</div>
 						</label>
@@ -316,7 +316,8 @@ export default translateWithTracker<IProps, IState, ITrackedProps>((props: IProp
 								className="btn btn-primary"
 								accept="text/javascript,.js"
 								onChange={(e) => this.onUploadFile(e)}
-								key={this.state.uploadFileKey}>
+								key={this.state.uploadFileKey}
+							>
 								<FontAwesomeIcon icon={faUpload} />
 								<span>{t('Upload Blueprints')}</span>
 							</UploadButton>

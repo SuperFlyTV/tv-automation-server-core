@@ -1,13 +1,14 @@
 import { IncomingMessage, ServerResponse } from 'http'
 import { logger } from '../../../lib/logging'
 import { Meteor } from 'meteor/meteor'
-import { updateRundownAndSaveCache } from './rundownInput'
+import { handleUpdatedRundown } from './rundownInput'
 import { Studios, StudioId } from '../../../lib/collections/Studios'
 import { check } from '../../../lib/check'
 import { Rundowns } from '../../../lib/collections/Rundowns'
 import { getRundownId } from './lib'
 import { protectString } from '../../../lib/lib'
 import { PickerPOST } from '../http'
+import { getExternalNRCSName } from '../../../lib/collections/PeripheralDevices'
 
 PickerPOST.route('/ingest/:studioId', (params, req: IncomingMessage, response: ServerResponse, next) => {
 	check(params.studioId, String)
@@ -22,7 +23,7 @@ PickerPOST.route('/ingest/:studioId', (params, req: IncomingMessage, response: S
 			ingestRundown = JSON.parse(ingestRundown)
 		}
 
-		ingestMOSRundown(protectString<StudioId>(params.studioId), ingestRundown)
+		importIngestRundown(protectString<StudioId>(params.studioId), ingestRundown)
 
 		response.statusCode = 200
 		response.end(content)
@@ -36,7 +37,7 @@ PickerPOST.route('/ingest/:studioId', (params, req: IncomingMessage, response: S
 		}
 	}
 })
-export function ingestMOSRundown(studioId: StudioId, ingestRundown: any) {
+export function importIngestRundown(studioId: StudioId, ingestRundown: any) {
 	const studio = Studios.findOne(studioId)
 	if (!studio) throw new Meteor.Error(404, `Studio ${studioId} does not exist`)
 
@@ -44,11 +45,11 @@ export function ingestMOSRundown(studioId: StudioId, ingestRundown: any) {
 
 	const existingDbRundown = Rundowns.findOne(rundownId)
 	// If the RO exists and is not from http then don't replace it. Otherwise, it is free to be replaced
-	if (existingDbRundown && existingDbRundown.dataSource !== 'http')
+	if (existingDbRundown && existingDbRundown.externalNRCSName !== getExternalNRCSName(undefined))
 		throw new Meteor.Error(
 			403,
-			`Cannot replace existing rundown from '${existingDbRundown.dataSource}' with http data`
+			`Cannot replace existing rundown from '${existingDbRundown.externalNRCSName}' with http data`
 		)
 
-	updateRundownAndSaveCache(studio, rundownId, existingDbRundown, ingestRundown, 'http')
+	handleUpdatedRundown(studio, undefined, ingestRundown, true)
 }
